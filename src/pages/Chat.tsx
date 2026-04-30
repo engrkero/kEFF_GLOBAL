@@ -44,19 +44,29 @@ export default function Chat() {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Presence Tracking
-  useEffect(() => {
-    if (!user) return;
-    const statusRef = doc(db, 'users', user.uid, 'status', 'presence');
-    
-    // Set online
-    setDoc(statusRef, { status: 'online', lastChanged: serverTimestamp() }, { merge: true });
+    // Presence Tracking
+    useEffect(() => {
+      if (!user) return;
+      const statusRef = doc(db, 'users', user.uid, 'status', 'presence');
+      
+      // Set online
+      setDoc(statusRef, { 
+        status: 'online', 
+        lastChanged: serverTimestamp(),
+        userId: user.uid // Redundancy for rules if needed
+      }, { merge: true });
 
-    // Mark offline on unmount
-    return () => {
-      setDoc(statusRef, { status: 'offline', lastChanged: serverTimestamp() }, { merge: true });
-    };
-  }, [user]);
+      // Keep tracking presence while tab is open
+      const interval = setInterval(() => {
+        setDoc(statusRef, { lastChanged: serverTimestamp() }, { merge: true });
+      }, 60000); // Heartbeat every minute
+
+      // Mark offline on unmount
+      return () => {
+        clearInterval(interval);
+        setDoc(statusRef, { status: 'offline', lastChanged: serverTimestamp() }, { merge: true });
+      };
+    }, [user]);
 
   useEffect(() => {
     if (!roomId || !user) return;
@@ -82,34 +92,50 @@ export default function Chat() {
     const checkRoom = async () => {
       const roomRef = doc(db, 'chats', roomId);
       const roomSnap = await getDoc(roomRef);
-      let listingId = roomSnap.exists() ? roomSnap.data().listingId : roomId.replace('room_', '');
       
-      if (!roomSnap.exists()) {
-        await setDoc(roomRef, {
-          participants: [user.uid, 'system'], 
-          listingId: listingId,
-          createdAt: serverTimestamp()
-        });
-      }
-
-      // Fetch Product Info
+      // Room ID contains listing ID: room_LISTINGID_BUYERID
+      const parts = roomId.split('_');
+      const listingId = parts[1];
+      const buyerId = parts[2] || user.uid;
+      
+      // Fetch Product Info FIRST to know the seller
       const productSnap = await getDoc(doc(db, 'listings', listingId));
       if (productSnap.exists()) {
         const prodData = productSnap.data();
-        setProduct(prodData);
+        setProduct({ id: listingId, ...prodData });
         setIsSeller(prodData.sellerId === user.uid);
         
-        const participants = roomSnap.exists() ? roomSnap.data().participants : [user.uid, prodData.sellerId];
-        const otherId = participants.find((id: string) => id !== user.uid);
-        setOtherUserId(otherId);
-
-        // Add seller to participants if not present
-        if (!roomSnap.exists() || !roomSnap.data().participants.includes(prodData.sellerId)) {
-          await setDoc(roomRef, { 
-            participants: [user.uid, prodData.sellerId].filter((v, i, a) => a.indexOf(v) === i),
+        const sellerId = prodData.sellerId;
+        
+        // If room doesn't exist, create it with BOTH
+        if (!roomSnap.exists()) {
+          const participants = [buyerId, sellerId].filter((v, i, a) => v && a.indexOf(v) === i);
+          
+          await setDoc(roomRef, {
+            participants: participants,
             listingId: listingId,
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+            buyerId: buyerId,
+            sellerId: sellerId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastMessage: "Negotiation started"
+          });
+          
+          // Set other user ID immediately for presence tracking
+          const otherId = participants.find((id: string) => id !== user.uid);
+          if (otherId) setOtherUserId(otherId);
+        } else {
+          // Room exists, ensure seller and buyer are in participants
+          const currentParticipants = roomSnap.data().participants || [];
+          const otherId = currentParticipants.find((id: string) => id !== user.uid);
+          if (otherId) setOtherUserId(otherId);
+
+          if (!currentParticipants.includes(sellerId) || !currentParticipants.includes(buyerId)) {
+            await updateDoc(roomRef, {
+              participants: [buyerId, sellerId].filter((v, i, a) => v && a.indexOf(v) === i),
+              updatedAt: serverTimestamp()
+            });
+          }
         }
       }
     };

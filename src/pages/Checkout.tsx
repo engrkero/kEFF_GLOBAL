@@ -1,55 +1,134 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Shield, ChevronLeft, CreditCard, Lock, CheckCircle2 } from 'lucide-react';
+import { Shield, ChevronLeft, CreditCard, Lock, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
-const PRODUCTS = {
-  '1': { name: 'iPhone 15 Pro Max', price: 850000, condition: 'Mint', sellerId: 'system' },
-  '2': { name: 'Samsung Galaxy S24 Ultra', price: 920000, condition: 'New', sellerId: 'system' }
-};
+import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 
 export default function Checkout() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const product = PRODUCTS[id as keyof typeof PRODUCTS];
+  const [product, setProduct] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState<'checkout' | 'success'>('checkout');
+  const [profileComplete, setProfileComplete] = useState(true);
 
-  if (!product) return <div>Product not found</div>;
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!id || !user) return;
+      try {
+        setLoading(true);
+        // 1. Fetch Product
+        const docSnap = await getDoc(doc(db, 'listings', id));
+        if (docSnap.exists()) {
+          setProduct({ id: docSnap.id, ...docSnap.data() });
+        }
+
+        // 2. Check Profile Completion
+        const profileSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
+        if (profileSnap.exists()) {
+          const data = profileSnap.data();
+          const isComplete = !!(data.address && data.state && data.phoneNumber);
+          setProfileComplete(isComplete);
+        } else {
+          setProfileComplete(false);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [id, user]);
 
   const handlePayment = async () => {
-    if (!user || !id) return;
-    setIsProcessing(true);
-    
-    const path = 'orders';
-    try {
-      // Simulate Paystack Initialization & Success
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    if (!user || !product) return;
 
-      // Create Order in Firestore
-      await addDoc(collection(db, path), {
-        buyerId: user.uid,
-        sellerId: product.sellerId,
-        listingId: id,
-        amount: product.price,
-        escrowStatus: 'HELD_IN_ESCROW', // Initially held in escrow after payment
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      setStep('success');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    } finally {
-      setIsProcessing(false);
+    if (!profileComplete) {
+      alert("Please complete your delivery address in Profile Settings before proceeding.");
+      navigate('/settings');
+      return;
     }
+
+    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!publicKey) {
+      alert("Payment gateway not configured. Please contact support.");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    // Dynamic Paystack Integration
+    const PaystackPop = (window as any).PaystackPop;
+    if (!PaystackPop) {
+      alert("Payment gateway failed to load. Please refresh and try again.");
+      setIsProcessing(false);
+      return;
+    }
+
+    const paystack = new PaystackPop();
+    paystack.newTransaction({
+      key: publicKey,
+      email: user.email || '',
+      amount: product.price, // Already in kobo from Firestore
+      currency: 'NGN',
+      onSuccess: async (transaction: any) => {
+        const path = 'orders';
+        try {
+          // Create Order in Firestore
+          await addDoc(collection(db, path), {
+            buyerId: user.uid,
+            sellerId: product.sellerId,
+            listingId: product.id,
+            amount: product.price,
+            escrowStatus: 'HELD_IN_ESCROW',
+            paystackReference: transaction.reference,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+
+          setStep('success');
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, path);
+          alert("Payment successful but failed to record order. Please contact support with reference: " + transaction.reference);
+        } finally {
+          setIsProcessing(false);
+        }
+      },
+      onCancel: () => {
+        setIsProcessing(false);
+      },
+      onError: (err: any) => {
+        console.error(err);
+        setIsProcessing(false);
+        alert("Payment window failed to load.");
+      }
+    });
   };
 
-  if (!user) return <div className="p-10 text-center">Please login to continue checkout.</div>;
+  if (!user) return <div className="p-10 text-center font-bold">Please login to continue checkout.</div>;
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Verifying Secure Channel...</p>
+      </div>
+    );
+  }
+
+  if (!product) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 px-10 text-center">
+      <AlertCircle className="w-12 h-12 text-red-400" />
+      <h2 className="text-xl font-black text-slate-800">Product Not Found</h2>
+      <p className="text-sm text-slate-500 font-medium">The listing you are looking for may have been sold or removed.</p>
+      <button onClick={() => navigate(-1)} className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest">Go Back</button>
+    </div>
+  );
 
   if (step === 'success') {
     return (
@@ -103,7 +182,7 @@ export default function Checkout() {
              <CreditCard className="w-8 h-8 opacity-20" />
           </div>
           <div className="flex-1 flex flex-col justify-center gap-1">
-            <h3 className="font-black text-slate-800 tracking-tight leading-none">{product.name}</h3>
+            <h3 className="font-black text-slate-800 tracking-tight leading-none">{product.title}</h3>
             <div className="flex items-center gap-2">
               <span className="inline-block bg-slate-100 px-2.5 py-1 rounded-lg text-[9px] text-slate-500 font-black uppercase tracking-widest">
                 {product.condition}

@@ -339,7 +339,10 @@ export default function ProductDetails() {
         ) : (
           <>
             <button 
-              onClick={() => navigate(`/chat/room_${product.id}`)}
+              onClick={() => {
+                if (!user) { navigate('/login'); return; }
+                navigate(`/chat/room_${product.id}_${user.uid}`);
+              }}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all",
                 product.condition === 'New' 
@@ -355,10 +358,11 @@ export default function ProductDetails() {
             {!(product.condition !== 'New' && isUserSeller && product.sellerId !== 'system') && (
               <button 
                 onClick={() => {
+                  if (!user) { navigate('/login'); return; }
                   if (product.condition === 'New') {
                     navigate(`/checkout/${product.id}`);
                   } else {
-                    navigate(`/chat/room_${product.id}`, { 
+                    navigate(`/chat/room_${product.id}_${user.uid}`, { 
                       state: { initialMessage: "Hello, I would like to make an offer on this item." } 
                     });
                   }
