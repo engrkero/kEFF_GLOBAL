@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera, CheckCircle2 } from 'lucide-react';
+import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera, CheckCircle2, CreditCard } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
@@ -40,6 +40,8 @@ export default function Settings() {
   const [verificationStatus, setVerificationStatus] = useState('UNVERIFIED');
   const [verificationDocs, setVerificationDocs] = useState<string[]>([]);
   const [bvn, setBvn] = useState('');
+  const [feePaid, setFeePaid] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -67,6 +69,7 @@ export default function Settings() {
           setNotifs(data.notificationPrefs || { messages: true, orderUpdates: true, promotions: false });
           setTwoFactor(data.twoFactorEnabled || false);
           setBvn(data.bvn || '');
+          setFeePaid(data.verificationFeePaid || false);
         }
       } catch (error) {
         console.error(error);
@@ -115,6 +118,7 @@ export default function Settings() {
         notificationPrefs: notifs,
         twoFactorEnabled: twoFactor,
         bvn,
+        verificationFeePaid: feePaid,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -125,6 +129,26 @@ export default function Settings() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePayment = async () => {
+    if (!user) return;
+    setIsPaying(true);
+    // Simulate payment gateway integration
+    setTimeout(async () => {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
+          verificationFeePaid: true,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        setFeePaid(true);
+        setIsPaying(false);
+        alert("Payment successful! ₦550 verification fee recorded.");
+      } catch (e) {
+        console.error(e);
+        setIsPaying(false);
+      }
+    }, 1500);
   };
 
   const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
@@ -237,8 +261,30 @@ export default function Settings() {
               {verificationStatus === 'UNVERIFIED' && (
                 <div className="space-y-4">
                   <p className="text-xs font-medium text-indigo-100 leading-relaxed max-w-[280px]">
-                    To list high-value items, you must verify your identity. Provide your BVN and upload verification documents.
+                    To list high-value items, you must verify your identity. Provide your BVN and pay a verification fee of ₦550.
                   </p>
+
+                  {/* Payment Status */}
+                  <div className="bg-white/10 rounded-2xl p-4 border border-white/20 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Verification Fee</p>
+                      <span className="text-[10px] font-black text-white px-2 py-0.5 bg-white/10 rounded-full">₦550</span>
+                    </div>
+                    {feePaid ? (
+                      <div className="flex items-center gap-2 text-green-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <p className="text-[10px] font-black uppercase tracking-widest">Fee Paid</p>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={handlePayment}
+                        disabled={isPaying}
+                        className="w-full h-11 bg-white text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                        {isPaying ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-3.5 h-3.5" /> Pay Verification Fee</>}
+                      </button>
+                    )}
+                  </div>
 
                   <div className="space-y-2">
                       <p className="text-[9px] font-black text-indigo-200 uppercase tracking-widest pl-1">Bank Verification Number (BVN)</p>

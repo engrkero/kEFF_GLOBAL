@@ -98,7 +98,7 @@ service cloud.firestore {
         allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
         allow create, update: if isValidId(userId) && isOwner(userId) && (
           request.method == 'create' || 
-          incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'address', 'lga', 'city', 'state', 'zipCode', 'notificationPrefs', 'twoFactorEnabled', 'verificationStatus', 'verificationDocs', 'bankDetails', 'bvn', 'updatedAt'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'address', 'lga', 'city', 'state', 'zipCode', 'notificationPrefs', 'twoFactorEnabled', 'verificationStatus', 'verificationDocs', 'bankDetails', 'bvn', 'verificationFeePaid', 'updatedAt'])
         );
       }
       match /status/presence {

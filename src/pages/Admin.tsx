@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, User, CheckCircle2, XCircle, Loader2, ChevronLeft, Search } from 'lucide-react';
+import { ShieldCheck, User, CheckCircle2, XCircle, Loader2, ChevronLeft, Search, CreditCard } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
 import { collectionGroup, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -15,6 +15,7 @@ interface PendingSeller {
   verificationDocs?: string;
   verificationStatus: string;
   bvn?: string;
+  feePaid?: boolean;
 }
 
 export default function Admin() {
@@ -45,7 +46,7 @@ export default function Admin() {
       const snap = await getDocs(q);
       const data = await Promise.all(snap.docs.map(async (d) => {
         const userId = d.ref.parent.parent!.id;
-        // Fetch private data for BVN
+        // Fetch private data for BVN and Fee status
         const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
         const privateData = privateSnap.exists() ? privateSnap.data() : {};
         
@@ -53,6 +54,7 @@ export default function Admin() {
           id: d.id,
           userId,
           bvn: privateData.bvn,
+          feePaid: privateData.verificationFeePaid,
           ...d.data()
         } as PendingSeller;
       }));
@@ -154,10 +156,19 @@ export default function Admin() {
                       </div>
                       <div className="flex-1">
                          <h4 className="font-black text-slate-800 tracking-tight">{seller.displayName}</h4>
-                         <div className="flex gap-2 border-t border-slate-50 pt-1 mt-1">
+                         <div className="flex gap-2 border-t border-slate-50 pt-1 mt-1 flex-wrap">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Application</p>
                             {seller.bvn && (
                               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 rounded-full">BVN: {seller.bvn}</p>
+                            )}
+                            {seller.feePaid ? (
+                              <p className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-50 px-2 rounded-full flex items-center gap-1">
+                                <CreditCard className="w-2.5 h-2.5" /> ₦550 PAID
+                              </p>
+                            ) : (
+                              <p className="text-[10px] font-black text-red-600 uppercase tracking-widest bg-red-50 px-2 rounded-full flex items-center gap-1">
+                                <CreditCard className="w-2.5 h-2.5" /> NOT PAID
+                              </p>
                             )}
                          </div>
                       </div>
