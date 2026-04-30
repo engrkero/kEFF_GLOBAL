@@ -217,14 +217,6 @@ export default function Profile() {
                 >
                   <SettingsIcon className="w-4 h-4" />
                 </button>
-                {user?.email === 'kerenonen4@gmail.com' && (
-                  <button 
-                    onClick={() => navigate('/admin')}
-                    className="flex-1 h-14 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                  </button>
-                )}
               </>
             ) : (
               <>
@@ -241,6 +233,24 @@ export default function Profile() {
               </>
             )}
           </div>
+
+          {isOwnProfile && user?.email === 'kerenonen4@gmail.com' && (
+            <motion.button 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => navigate('/admin')}
+              className="w-full p-6 bg-slate-900 rounded-3xl flex items-center justify-between group overflow-hidden relative active:scale-[0.98] transition-all"
+            >
+               <div className="relative z-10">
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">System Control</p>
+                  <h3 className="text-xl font-black text-white tracking-tight">Admin Dashboard</h3>
+               </div>
+               <div className="relative z-10 w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/10 group-hover:bg-indigo-600 transition-colors">
+                  <ShieldCheck className="w-6 h-6 text-white" />
+               </div>
+               <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700" />
+            </motion.button>
+          )}
         </div>
       </section>
 
