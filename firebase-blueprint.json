@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "User Public Profile",
+      "description": "Publicly accessible user information.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "avatarUrl": { "type": "string", "description": "The user's profile picture URL." },
+        "location": { "type": "string", "description": "The user's general location (e.g., Lagos, NG)." },
+        "rating": { "type": "number", "description": "Average rating of the user." },
+        "reviewCount": { "type": "integer", "description": "Total number of reviews received." }
+      },
+      "required": ["displayName"]
+    },
+    "UserPrivate": {
+      "title": "User Private Data",
+      "description": "Sensitive user information restricted to owner/admins.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "paystackSubaccountId": { "type": "string", "description": "Paystack subaccount for payouts." },
+        "phoneNumber": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "zipCode": { "type": "string" },
+        "notificationPrefs": {
+          "type": "object",
+          "properties": {
+            "messages": { "type": "boolean" },
+            "orderUpdates": { "type": "boolean" },
+            "promotions": { "type": "boolean" }
+          }
+        },
+        "twoFactorEnabled": { "type": "boolean" },
+        "verificationStatus": { "type": "string", "enum": ["UNVERIFIED", "PENDING", "VERIFIED", "REJECTED"] },
+        "verificationDocs": { "type": "array", "items": { "type": "string" } },
+        "bankDetails": {
+          "type": "object",
+          "properties": {
+            "accountName": { "type": "string" },
+            "accountNumber": { "type": "string" },
+            "bankName": { "type": "string" }
+          }
+        }
+      },
+      "required": ["email"]
+    },
+    "Listing": {
+      "title": "Product Listing",
+      "description": "A smartphone or accessory for sale.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "integer", "description": "Price in kobo/cents." },
+        "condition": { "type": "string", "enum": ["New", "Mint", "Good", "Fair", "Cracked"] },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "sellerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Sold", "Archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "storage": { "type": "string" },
+        "color": { "type": "string" },
+        "location": { "type": "string" },
+        "specs": { "type": "object" }
+      },
+      "required": ["title", "price", "sellerId", "status", "createdAt", "brand", "model", "location"]
+    },
+    "Order": {
+      "title": "Escrow Order",
+      "description": "A transaction between a buyer and seller held in escrow.",
+      "type": "object",
+      "properties": {
+        "buyerId": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "listingId": { "type": "string" },
+        "amount": { "type": "integer" },
+        "escrowStatus": { "type": "string", "enum": ["PENDING_PAYMENT", "HELD_IN_ESCROW", "DELIVERED", "DISPUTED", "RELEASED", "REFUNDED"] },
+        "shippingProvider": { "type": "string" },
+        "trackingNumber": { "type": "string" },
+        "shippedAt": { "type": "string", "format": "date-time" },
+        "buyerReviewed": { "type": "boolean" },
+        "sellerReviewed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["buyerId", "sellerId", "listingId", "amount", "escrowStatus", "createdAt"]
+    },
+    "Review": {
+      "title": "User Review",
+      "description": "Rating and comment left by a user for another after a transaction.",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "fromId": { "type": "string" },
+        "toId": { "type": "string" },
+        "role": { "type": "string", "enum": ["buyer", "seller"] },
+        "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "fromId", "toId", "role", "rating", "createdAt"]
+    },
+    "ChatRoom": {
+      "title": "Chat Room",
+      "description": "Container for conversation between buyer and seller.",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "listingId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participants", "listingId", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A message in a conversation.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "type": { "type": "string", "enum": ["TEXT", "OFFER", "SYSTEM"] },
+        "offerAmount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "senderId", "createdAt"]
+    },
+    "Favorite": {
+      "title": "Favorite Listing",
+      "description": "A listing bookmarked by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "listingId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "listingId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/public/profile": { "schema": "UserPublic", "description": "Public user profile." },
+    "/users/{userId}/private/data": { "schema": "UserPrivate", "description": "Private user data." },
+    "/users/{userId}/favorites/{listingId}": { "schema": "Favorite", "description": "Users saved items." },
+    "/listings/{listingId}": { "schema": "Listing", "description": "Individual product listings." },
+    "/orders/{orderId}": { "schema": "Order", "description": "Escrow transaction records." },
+    "/chats/{roomId}": { "schema": "ChatRoom", "description": "Chat room metadata." },
+    "/chats/{roomId}/messages/{messageId}": { "schema": "ChatMessage", "description": "Messages within a chat room." },
+    "/reviews/{reviewId}": { "schema": "Review", "description": "User reviews and ratings." }
+  }
+}

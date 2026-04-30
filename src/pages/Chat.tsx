@@ -1,0 +1,275 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Send, Image as ImageIcon, ChevronLeft, MoreVertical, MessageCircle, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, getDoc, setDoc } from 'firebase/firestore';
+
+interface Message {
+  id?: string;
+  senderId: string;
+  text: string;
+  createdAt: any;
+  type?: 'TEXT' | 'OFFER' | 'SYSTEM';
+  offerAmount?: number;
+}
+
+export default function Chat() {
+  const { roomId } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [offerAmount, setOfferAmount] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!roomId || !user) return;
+
+    // Ensure Chat Room exists
+    const checkRoom = async () => {
+      const roomRef = doc(db, 'chats', roomId);
+      const roomSnap = await getDoc(roomRef);
+      if (!roomSnap.exists()) {
+        await setDoc(roomRef, {
+          participants: [user.uid, 'system'], 
+          listingId: roomId.replace('room_', ''),
+          createdAt: serverTimestamp()
+        });
+      }
+    };
+    checkRoom();
+
+    const path = `chats/${roomId}/messages`;
+    const q = query(collection(db, path), orderBy('createdAt', 'asc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
+      setMessages(msgs);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+
+    return () => unsubscribe();
+  }, [roomId, user]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async (customText?: string, type: 'TEXT' | 'OFFER' | 'SYSTEM' = 'TEXT', amount?: number) => {
+    const textToSend = customText || inputText;
+    if (!textToSend.trim() && type === 'TEXT') return;
+    if (!user || !roomId) return;
+
+    if (!customText) setInputText('');
+
+    const path = `chats/${roomId}/messages`;
+    try {
+      await addDoc(collection(db, path), {
+        senderId: user.uid,
+        text: textToSend,
+        type,
+        ...(amount && { offerAmount: amount }),
+        createdAt: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  };
+
+  const handleMakeOffer = () => {
+    if (!offerAmount) return;
+    handleSend(`OFFER: ₦${parseInt(offerAmount).toLocaleString()}`, 'OFFER', parseInt(offerAmount) * 100);
+    setOfferAmount('');
+    setShowOfferModal(false);
+  };
+
+  if (!user) {
+    return <div className="p-10 text-center">Please login to chat.</div>;
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-140px)] -mx-4 -mt-4 bg-slate-50 relative overflow-hidden animate-in fade-in duration-500">
+      {/* ... Header ... */}
+      <div className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm shadow-slate-100">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-800 active:scale-90 transition-transform">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center font-black text-indigo-600 uppercase shadow-inner border border-white/50">
+              {user.displayName?.charAt(0) || 'U'}
+            </div>
+            <div>
+              <p className="font-black text-sm text-slate-800 tracking-tight">Support / Seller</p>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <p className="text-[10px] text-green-600 font-black uppercase tracking-wider">Online</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {loading ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+          </div>
+        ) : (
+          <>
+            <div className="text-center">
+              <span className="text-[9px] font-black text-slate-400 bg-white/80 border border-slate-100 px-4 py-1.5 rounded-full uppercase tracking-[0.2em] shadow-sm">
+                Safety First: Secure with Escrow
+              </span>
+            </div>
+
+            {messages.map((msg, i) => {
+              const isMe = msg.senderId === user.uid;
+              const isOffer = msg.type === 'OFFER';
+
+              return (
+                <div key={msg.id || i} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
+                  <div className={cn(
+                    "max-w-[85%] px-4 py-3 rounded-[1.25rem] shadow-sm text-sm font-medium leading-relaxed",
+                    isOffer 
+                      ? "bg-amber-50 border-2 border-amber-200 text-amber-900 rounded-2xl"
+                      : isMe 
+                        ? "bg-indigo-600 text-white rounded-tr-none shadow-indigo-100 shadow-lg" 
+                        : "bg-white text-slate-800 rounded-tl-none border border-slate-100 shadow-slate-100 shadow-md"
+                  )}>
+                    {isOffer && <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-1">New Offer</p>}
+                    {msg.text}
+                    {isOffer && !isMe && (
+                      <div className="mt-3 flex gap-2">
+                        <button className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase">Accept</button>
+                        <button className="px-3 py-1.5 bg-white border border-amber-200 text-amber-600 rounded-lg text-[10px] font-black uppercase">Decline</button>
+                      </div>
+                    )}
+                  </div>
+                  {msg.createdAt && (
+                    <p className={cn("text-[9px] mt-2 opacity-100 text-slate-400 font-black uppercase tracking-wider")}>
+                      {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
+        <div ref={scrollRef} />
+      </div>
+
+      {/* Quick Replies & Input */}
+      <div className="p-4 bg-white/80 backdrop-blur-xl border-t border-slate-200 sticky bottom-0 space-y-4">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+          <button 
+            onClick={() => handleSend("Is this item still available?")}
+            className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
+          >
+            Still available?
+          </button>
+          <button 
+            onClick={() => setShowOfferModal(true)}
+            className="whitespace-nowrap px-4 py-2 bg-amber-50 border border-amber-200 rounded-full text-[10px] font-black uppercase tracking-tight text-amber-600 flex items-center gap-1.5 active:bg-amber-100"
+          >
+            Make an Offer
+          </button>
+          <button 
+            onClick={() => handleSend("What is the battery health?")}
+            className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
+          >
+            Battery health?
+          </button>
+        </div>
+
+        <div className="max-w-lg mx-auto flex items-center gap-3">
+          <button className="p-3 bg-slate-100 text-slate-500 rounded-2xl active:scale-95 transition-transform">
+            <ImageIcon className="w-5 h-5" />
+          </button>
+          <div className="flex-1 relative flex items-center">
+            <input 
+              type="text" 
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Type message..."
+              className="w-full bg-slate-100 border border-slate-200/50 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all font-medium placeholder:text-slate-400"
+            />
+            <button 
+              onClick={() => handleSend()}
+              disabled={!inputText.trim()}
+              className={cn(
+                "absolute right-2 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95",
+                inputText.trim() 
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" 
+                  : "text-slate-300 pointer-events-none"
+              )}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Offer Modal */}
+      <AnimatePresence>
+        {showOfferModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center p-4"
+          >
+            <motion.div 
+               initial={{ y: 100 }}
+               animate={{ y: 0 }}
+               exit={{ y: 100 }}
+               className="w-full max-w-sm bg-white rounded-[3rem] p-8 space-y-6 shadow-2xl"
+            >
+               <div className="space-y-1">
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Make an Offer</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enter your desired amount</p>
+               </div>
+               
+               <div className="relative">
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">₦</div>
+                  <input 
+                    type="number"
+                    autoFocus
+                    value={offerAmount}
+                    onChange={(e) => setOfferAmount(e.target.value)}
+                    placeholder="250,000"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-[2rem] pl-14 pr-6 py-5 text-2xl font-black tracking-tighter focus:ring-4 focus:ring-amber-50 outline-none"
+                  />
+               </div>
+
+               <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowOfferModal(false)}
+                    className="flex-1 h-16 bg-slate-100 text-slate-600 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleMakeOffer}
+                    disabled={!offerAmount}
+                    className="flex-[2] h-16 bg-amber-500 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    Send Offer
+                  </button>
+               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

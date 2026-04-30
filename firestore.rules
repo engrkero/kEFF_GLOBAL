@@ -1,0 +1,172 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isEmailVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'kerenonen4@gmail.com' || 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- Validation Helpers ---
+    
+    function isValidListing(data) {
+      return data.keys().hasAll(['title', 'price', 'sellerId', 'status', 'createdAt', 'brand', 'model', 'location', 'condition', 'images'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
+        && data.price is int && data.price > 0
+        && (data.sellerId == request.auth.uid || data.sellerId == 'system')
+        && data.status in ['Active', 'Sold', 'Archived']
+        && data.condition in ['New', 'Mint', 'Good', 'Fair', 'Cracked']
+        && data.brand is string && data.model is string
+        && data.location is string
+        && (data.createdAt == request.time || data.createdAt is timestamp);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['buyerId', 'sellerId', 'listingId', 'amount', 'escrowStatus', 'createdAt'])
+        && data.buyerId == request.auth.uid
+        && data.amount is int && data.amount > 0
+        && data.escrowStatus in ['PENDING_PAYMENT', 'HELD_IN_ESCROW', 'DELIVERED', 'DISPUTED', 'RELEASED', 'REFUNDED']
+        && data.createdAt == request.time;
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll(['orderId', 'fromId', 'toId', 'role', 'rating', 'createdAt'])
+        && data.orderId is string && isValidId(data.orderId)
+        && data.fromId == request.auth.uid
+        && data.toId is string && isValidId(data.toId)
+        && data.role in ['buyer', 'seller']
+        && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && data.createdAt == request.time;
+    }
+
+    function isValidUserPublic(data) {
+      return data.keys().hasAll(['displayName'])
+        && data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 64
+        && (!('avatarUrl' in data) || data.avatarUrl is string)
+        && (!('location' in data) || data.location is string)
+        && (!('verificationStatus' in data) || data.verificationStatus in ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'])
+        && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    function isValidChatMessage(data, roomId) {
+      // Relational check: User must be a participant in the room
+      let room = get(/databases/$(database)/documents/chats/$(roomId)).data;
+      return data.keys().hasAll(['text', 'senderId', 'createdAt'])
+        && data.text is string && data.text.size() >= 0 && data.text.size() <= 2000
+        && data.senderId == request.auth.uid
+        && data.createdAt == request.time
+        && request.auth.uid in room.participants
+        && (!('type' in data) || data.type in ['TEXT', 'OFFER', 'SYSTEM'])
+        && (!('offerAmount' in data) || data.offerAmount is int);
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Users Collection
+    match /users/{userId} {
+      match /public/profile {
+        allow get: if isSignedIn();
+        allow list: if isSignedIn(); 
+        allow create, update: if isValidId(userId) && isOwner(userId) && isValidUserPublic(incoming()) && (
+          request.method == 'create' || 
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'location', 'verificationStatus', 'updatedAt'])
+        );
+      }
+      match /private/data {
+        allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow create, update: if isValidId(userId) && isOwner(userId) && (
+          request.method == 'create' || 
+          incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'address', 'city', 'state', 'zipCode', 'notificationPrefs', 'twoFactorEnabled', 'verificationStatus', 'verificationDocs', 'bankDetails'])
+        );
+      }
+      match /favorites/{listingId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create, delete: if isOwner(userId) && isValidId(listingId);
+      }
+    }
+
+    // 2. Listings Collection
+    match /listings/{listingId} {
+      allow read: if true;
+      allow create: if isEmailVerified() && isValidListing(incoming());
+      allow update: if (isOwner(existing().sellerId) || isAdmin()) && (
+        // Action: Edit Listing
+        (incoming().status == 'Active' && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'price', 'images', 'specs', 'condition'])) ||
+        // Action: Mark as Sold (System or Seller)
+        (incoming().status == 'Sold' && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      ) && isValidListing(incoming());
+      allow delete: if isOwner(existing().sellerId) || isAdmin();
+    }
+
+    // 3. Orders Collection (Escrow)
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && isSignedIn() && (request.auth.uid == resource.data.buyerId || request.auth.uid == resource.data.sellerId || isAdmin());
+      allow list: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
+      
+      allow create: if isValidId(orderId) && isEmailVerified() 
+        && isValidOrder(incoming())
+        && incoming().escrowStatus == 'PENDING_PAYMENT'
+        && exists(/databases/$(database)/documents/listings/$(incoming().listingId));
+
+      allow update: if isValidId(orderId) && (isSignedIn() && (request.auth.uid == existing().buyerId || request.auth.uid == existing().sellerId || isAdmin())) && (
+        // Action: Mark as Paid (Held in Escrow) - Usually via Webhook/Admin
+        (incoming().escrowStatus == 'HELD_IN_ESCROW' && incoming().diff(existing()).affectedKeys().hasOnly(['escrowStatus', 'updatedAt']) && isAdmin()) ||
+        // Action: Confirm Delivery (Buyer)
+        (isOwner(existing().buyerId) && incoming().escrowStatus == 'RELEASED' && incoming().diff(existing()).affectedKeys().hasOnly(['escrowStatus', 'updatedAt'])) ||
+        // Action: Mark as Shipped/Delivered (Seller)
+        (isOwner(existing().sellerId) && (
+          (incoming().escrowStatus == 'DELIVERED' && incoming().diff(existing()).affectedKeys().hasAll(['escrowStatus', 'updatedAt']) && incoming().diff(existing()).affectedKeys().hasAny(['shippingProvider', 'trackingNumber', 'shippedAt'])) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['shippingProvider', 'trackingNumber', 'shippedAt', 'updatedAt']))
+        )) ||
+        // Action: Dispute (Buyer)
+        (isOwner(existing().buyerId) && incoming().escrowStatus == 'DISPUTED' && incoming().diff(existing()).affectedKeys().hasOnly(['escrowStatus', 'updatedAt'])) ||
+        // Action: Review (Buyer or Seller)
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['buyerReviewed', 'sellerReviewed', 'updatedAt']) && (
+          (isOwner(existing().buyerId) && incoming().buyerReviewed == true && existing().buyerReviewed != true) ||
+          (isOwner(existing().sellerId) && incoming().sellerReviewed == true && existing().sellerReviewed != true)
+        ))
+      ) && incoming().updatedAt == request.time;
+    }
+
+    // 4. Reviews Collection
+    match /reviews/{reviewId} {
+      allow get: if isValidId(reviewId);
+      allow list: if true; // Everyone can see reviews (public)
+      allow create: if isValidId(reviewId) && isSignedIn() && isValidReview(incoming()) 
+        && get(/databases/$(database)/documents/orders/$(incoming().orderId)).data.escrowStatus == 'RELEASED'
+        && (
+          (incoming().role == 'buyer' && get(/databases/$(database)/documents/orders/$(incoming().orderId)).data.buyerId == request.auth.uid && get(/databases/$(database)/documents/orders/$(incoming().orderId)).data.sellerId == incoming().toId) ||
+          (incoming().role == 'seller' && get(/databases/$(database)/documents/orders/$(incoming().orderId)).data.sellerId == request.auth.uid && get(/databases/$(database)/documents/orders/$(incoming().orderId)).data.buyerId == incoming().toId)
+        );
+    }
+
+    // 5. Chats Collection
+    match /chats/{roomId} {
+      allow get: if isValidId(roomId) && isSignedIn() && request.auth.uid in resource.data.participants;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isValidId(roomId) && isSignedIn() && incoming().participants.size() == 2 && request.auth.uid in incoming().participants;
+      
+      match /messages/{messageId} {
+        allow get: if isValidId(messageId) && isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(roomId)).data.participants;
+        allow list: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(roomId)).data.participants;
+        allow create: if isValidId(messageId) && isEmailVerified() && isValidChatMessage(incoming(), roomId);
+      }
+    }
+  }
+}

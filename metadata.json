@@ -1,0 +1,14 @@
+{
+  "name": "KUFF GLOBAL",
+  "description": "High-performance P2P marketplace for used smartphones and mobile accessories with escrow protection.",
+  "requestFramePermissions": [
+    "camera",
+    "notifications",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "PWA",
+    "Real-time Chat",
+    "Escrow Payments"
+  ]
+}
