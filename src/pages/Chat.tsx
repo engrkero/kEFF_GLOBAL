@@ -12,8 +12,9 @@ interface Message {
   senderId: string;
   text: string;
   createdAt: any;
-  type?: 'TEXT' | 'OFFER' | 'SYSTEM';
+  type?: 'TEXT' | 'OFFER' | 'SYSTEM' | 'PAY_REQUEST';
   offerAmount?: number;
+  status?: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'PAID';
 }
 
 export default function Chat() {
@@ -24,7 +25,11 @@ export default function Chat() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [showOfferModal, setShowOfferModal] = useState(false);
+  const [showPayRequestModal, setShowPayRequestModal] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [product, setProduct] = useState<any>(null);
+  const [isSeller, setIsSeller] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,12 +39,31 @@ export default function Chat() {
     const checkRoom = async () => {
       const roomRef = doc(db, 'chats', roomId);
       const roomSnap = await getDoc(roomRef);
+      let listingId = roomSnap.exists() ? roomSnap.data().listingId : roomId.replace('room_', '');
+      
       if (!roomSnap.exists()) {
         await setDoc(roomRef, {
           participants: [user.uid, 'system'], 
-          listingId: roomId.replace('room_', ''),
+          listingId: listingId,
           createdAt: serverTimestamp()
         });
+      }
+
+      // Fetch Product Info
+      const productSnap = await getDoc(doc(db, 'listings', listingId));
+      if (productSnap.exists()) {
+        const prodData = productSnap.data();
+        setProduct(prodData);
+        setIsSeller(prodData.sellerId === user.uid);
+        
+        // Add seller to participants if not present
+        if (!roomSnap.exists() || !roomSnap.data().participants.includes(prodData.sellerId)) {
+          await setDoc(roomRef, { 
+            participants: [user.uid, prodData.sellerId].filter((v, i, a) => a.indexOf(v) === i),
+            listingId: listingId,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
       }
     };
     checkRoom();
@@ -62,7 +86,7 @@ export default function Chat() {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async (customText?: string, type: 'TEXT' | 'OFFER' | 'SYSTEM' = 'TEXT', amount?: number) => {
+  const handleSend = async (customText?: string, type: 'TEXT' | 'OFFER' | 'SYSTEM' | 'PAY_REQUEST' = 'TEXT', amount?: number) => {
     const textToSend = customText || inputText;
     if (!textToSend.trim() && type === 'TEXT') return;
     if (!user || !roomId) return;
@@ -88,6 +112,33 @@ export default function Chat() {
     handleSend(`OFFER: ₦${parseInt(offerAmount).toLocaleString()}`, 'OFFER', parseInt(offerAmount) * 100);
     setOfferAmount('');
     setShowOfferModal(false);
+  };
+
+  const handleIssuePayRequest = () => {
+    if (!payAmount) return;
+    handleSend(`PAYMENT REQUEST: ₦${parseInt(payAmount).toLocaleString()}`, 'PAY_REQUEST', parseInt(payAmount) * 100);
+    setPayAmount('');
+    setShowPayRequestModal(false);
+  };
+
+  const handlePayment = async (msg: Message) => {
+    if (!msg.offerAmount) return;
+    // Paystack integration (Simplified Popup)
+    const handler = (window as any).PaystackPop?.setup({
+      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+      email: user?.email,
+      amount: msg.offerAmount,
+      currency: "NGN",
+      callback: async (response: any) => {
+        // Handle success
+        handleSend(`PAID: ₦${(msg.offerAmount! / 100).toLocaleString()}. Ref: ${response.reference}`, 'SYSTEM');
+        // Update order status logic would go here
+      },
+      onClose: () => {
+        alert('Payment cancelled');
+      }
+    });
+    handler?.openIframe();
   };
 
   if (!user) {
@@ -134,23 +185,46 @@ export default function Chat() {
             {messages.map((msg, i) => {
               const isMe = msg.senderId === user.uid;
               const isOffer = msg.type === 'OFFER';
+              const isPayRequest = msg.type === 'PAY_REQUEST';
 
               return (
                 <div key={msg.id || i} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
                   <div className={cn(
                     "max-w-[85%] px-4 py-3 rounded-[1.25rem] shadow-sm text-sm font-medium leading-relaxed",
-                    isOffer 
+                    isOffer || isPayRequest
                       ? "bg-amber-50 border-2 border-amber-200 text-amber-900 rounded-2xl"
                       : isMe 
                         ? "bg-indigo-600 text-white rounded-tr-none shadow-indigo-100 shadow-lg" 
                         : "bg-white text-slate-800 rounded-tl-none border border-slate-100 shadow-slate-100 shadow-md"
                   )}>
-                    {isOffer && <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-1">New Offer</p>}
+                    {(isOffer || isPayRequest) && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-1">
+                        {isOffer ? 'New Offer' : 'Payment Request'}
+                      </p>
+                    )}
                     {msg.text}
                     {isOffer && !isMe && (
                       <div className="mt-3 flex gap-2">
-                        <button className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase">Accept</button>
+                        <button 
+                          onClick={() => {
+                            setPayAmount((msg.offerAmount! / 100).toString());
+                            setShowPayRequestModal(true);
+                          }}
+                          className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase"
+                        >
+                          Accept & Request Pay
+                        </button>
                         <button className="px-3 py-1.5 bg-white border border-amber-200 text-amber-600 rounded-lg text-[10px] font-black uppercase">Decline</button>
+                      </div>
+                    )}
+                    {isPayRequest && !isMe && (
+                      <div className="mt-3">
+                        <button 
+                          onClick={() => handlePayment(msg)}
+                          className="w-full px-4 py-2.5 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-100 active:scale-95 transition-all"
+                        >
+                          Pay Securely ₦{(msg.offerAmount! / 100).toLocaleString()}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -170,24 +244,38 @@ export default function Chat() {
       {/* Quick Replies & Input */}
       <div className="p-4 bg-white/80 backdrop-blur-xl border-t border-slate-200 sticky bottom-0 space-y-4">
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-          <button 
-            onClick={() => handleSend("Is this item still available?")}
-            className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
-          >
-            Still available?
-          </button>
-          <button 
-            onClick={() => setShowOfferModal(true)}
-            className="whitespace-nowrap px-4 py-2 bg-amber-50 border border-amber-200 rounded-full text-[10px] font-black uppercase tracking-tight text-amber-600 flex items-center gap-1.5 active:bg-amber-100"
-          >
-            Make an Offer
-          </button>
-          <button 
-            onClick={() => handleSend("What is the battery health?")}
-            className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
-          >
-            Battery health?
-          </button>
+          {!isSeller && (
+            <button 
+              onClick={() => handleSend("Is this item still available?")}
+              className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
+            >
+              Still available?
+            </button>
+          )}
+          {!isSeller && (
+            <button 
+              onClick={() => setShowOfferModal(true)}
+              className="whitespace-nowrap px-4 py-2 bg-amber-50 border border-amber-200 rounded-full text-[10px] font-black uppercase tracking-tight text-amber-600 flex items-center gap-1.5 active:bg-amber-100"
+            >
+              Make an Offer
+            </button>
+          )}
+          {isSeller && (
+            <button 
+              onClick={() => setShowPayRequestModal(true)}
+              className="whitespace-nowrap px-4 py-2 bg-green-50 border border-green-200 rounded-full text-[10px] font-black uppercase tracking-tight text-green-600 flex items-center gap-1.5 active:bg-green-100"
+            >
+              Issue Pay Request
+            </button>
+          )}
+          {!isSeller && (
+            <button 
+              onClick={() => handleSend("What is the battery health?")}
+              className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
+            >
+              Battery health?
+            </button>
+          )}
         </div>
 
         <div className="max-w-lg mx-auto flex items-center gap-3">
@@ -219,14 +307,14 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Offer Modal */}
+      {/* Offer/PayRequest Modals */}
       <AnimatePresence>
-        {showOfferModal && (
+        {(showOfferModal || showPayRequestModal) && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center p-4"
+            className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center p-4 shadow-inner"
           >
             <motion.div 
                initial={{ y: 100 }}
@@ -235,8 +323,8 @@ export default function Chat() {
                className="w-full max-w-sm bg-white rounded-[3rem] p-8 space-y-6 shadow-2xl"
             >
                <div className="space-y-1">
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Make an Offer</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enter your desired amount</p>
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight">{showOfferModal ? 'Make an Offer' : 'Issue Pay Request'}</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enter the amount in Naira</p>
                </div>
                
                <div className="relative">
@@ -244,26 +332,32 @@ export default function Chat() {
                   <input 
                     type="number"
                     autoFocus
-                    value={offerAmount}
-                    onChange={(e) => setOfferAmount(e.target.value)}
+                    value={showOfferModal ? offerAmount : payAmount}
+                    onChange={(e) => showOfferModal ? setOfferAmount(e.target.value) : setPayAmount(e.target.value)}
                     placeholder="250,000"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-[2rem] pl-14 pr-6 py-5 text-2xl font-black tracking-tighter focus:ring-4 focus:ring-amber-50 outline-none"
+                    className={cn(
+                      "w-full bg-slate-50 border border-slate-100 rounded-[2rem] pl-14 pr-6 py-5 text-2xl font-black tracking-tighter outline-none",
+                      showOfferModal ? "focus:ring-4 focus:ring-amber-50" : "focus:ring-4 focus:ring-green-50"
+                    )}
                   />
                </div>
 
                <div className="flex gap-3">
                   <button 
-                    onClick={() => setShowOfferModal(false)}
+                    onClick={() => { setShowOfferModal(false); setShowPayRequestModal(false); }}
                     className="flex-1 h-16 bg-slate-100 text-slate-600 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest"
                   >
                     Cancel
                   </button>
                   <button 
-                    onClick={handleMakeOffer}
-                    disabled={!offerAmount}
-                    className="flex-[2] h-16 bg-amber-500 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all disabled:opacity-50"
+                    onClick={showOfferModal ? handleMakeOffer : handleIssuePayRequest}
+                    disabled={showOfferModal ? !offerAmount : !payAmount}
+                    className={cn(
+                      "flex-[2] h-16 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all disabled:opacity-50",
+                      showOfferModal ? "bg-amber-500 shadow-amber-100" : "bg-green-600 shadow-green-100"
+                    )}
                   >
-                    Send Offer
+                    {showOfferModal ? 'Send Offer' : 'Issue Request'}
                   </button>
                </div>
             </motion.div>

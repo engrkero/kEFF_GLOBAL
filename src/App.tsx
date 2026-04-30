@@ -15,12 +15,14 @@ import OrderDetails from './pages/OrderDetails';
 import Sell from './pages/Sell';
 import Wishlist from './pages/Wishlist';
 import Settings from './pages/Settings';
+import InstallPrompt from './components/InstallPrompt';
 
 export default function App() {
   return (
     <AuthProvider>
       <Router>
         <Layout>
+          <InstallPrompt />
           <AnimatePresence mode="wait">
             <Routes>
               <Route path="/" element={

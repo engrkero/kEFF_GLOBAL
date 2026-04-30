@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ChevronLeft, Share2, Heart, Shield, MessageCircle, ShoppingBag, Loader2, Maximize2, X } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { cn } from '../lib/utils';
@@ -31,6 +31,29 @@ export default function ProductDetails() {
   const [showZoom, setShowZoom] = useState(false);
   const [zoomIndex, setZoomIndex] = useState(0);
 
+  const [isUserSeller, setIsUserSeller] = useState(false);
+
+  useEffect(() => {
+    const checkSellerStatus = async () => {
+      if (!user) return;
+      const profileSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
+      if (profileSnap.exists()) {
+        const data = profileSnap.data();
+        setIsUserSeller(!!(data.bankDetails?.accountNumber));
+      }
+    };
+    checkSellerStatus();
+  }, [user]);
+
+  // Auto-play carousel
+  useEffect(() => {
+    if (!product || product.images.length <= 1) return;
+    const interval = setInterval(() => {
+      setActiveImageIndex(prev => (prev + 1) % product.images.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [product]);
+
   const openZoom = (index: number) => {
     setZoomIndex(index);
     setShowZoom(true);
@@ -40,28 +63,31 @@ export default function ProductDetails() {
   const prevZoom = () => setZoomIndex(prev => (prev - 1 + (product?.images.length || 1)) % (product?.images.length || 1));
 
   useEffect(() => {
-    const fetchProduct = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-        const docRef = doc(db, 'listings', id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setProduct({ id: docSnap.id, ...docSnap.data() } as Listing);
-        }
-
-        // Check if favorited
+    if (!id) return;
+    setLoading(true);
+    
+    // Use onSnapshot for real-time updates and to fix potential new listing race conditions
+    const unsubscribe = onSnapshot(doc(db, 'listings', id), async (docSnap) => {
+      if (docSnap.exists()) {
+        const prodData = { id: docSnap.id, ...docSnap.data() } as Listing;
+        setProduct(prodData);
+        
+        // Check if favorited (only once or when user changes)
         if (user) {
           const favSnap = await getDoc(doc(db, 'users', user.uid, 'favorites', id));
           setIsFavorited(favSnap.exists());
         }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, 'listings');
-      } finally {
-        setLoading(false);
+      } else {
+        setProduct(null);
       }
-    };
-    fetchProduct();
+      setLoading(false);
+    }, (error) => {
+      console.error(error);
+      setLoading(false);
+      handleFirestoreError(error, OperationType.GET, 'listings');
+    });
+
+    return () => unsubscribe();
   }, [id, user]);
 
   const toggleFavorite = async () => {
@@ -96,6 +122,8 @@ export default function ProductDetails() {
     return <div className="p-10 text-center font-bold text-slate-400">Product not found</div>;
   }
 
+  const isOwner = user?.uid === product.sellerId;
+
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-32 overflow-x-hidden">
       {/* Header Actions */}
@@ -107,21 +135,25 @@ export default function ProductDetails() {
           <button className="p-3 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-200/50 active:scale-90 transition-all">
             <Share2 className="w-5 h-5 text-slate-600" />
           </button>
-          <button 
-            onClick={toggleFavorite}
-            className={cn(
-              "p-3 rounded-2xl shadow-xl shadow-slate-200/50 active:scale-90 transition-all",
-              isFavorited ? "bg-red-500 text-white" : "bg-white/90 backdrop-blur-md text-slate-600"
-            )}
-          >
-            <Heart className={cn("w-5 h-5", isFavorited && "fill-white")} />
-          </button>
+          {!isOwner && (
+            <button 
+              onClick={toggleFavorite}
+              className={cn(
+                "p-3 rounded-2xl shadow-xl shadow-slate-200/50 active:scale-90 transition-all",
+                isFavorited ? "bg-red-500 text-white" : "bg-white/90 backdrop-blur-md text-slate-600"
+              )}
+            >
+              <Heart className={cn("w-5 h-5", isFavorited && "fill-white")} />
+            </button>
+          )}
         </div>
       </div>
 
+      {/* ... (image gallery remains same) ... */}
+
       {/* Image Gallery carousel */}
       <div className="space-y-4 -mx-4 -mt-24">
-        <div className="aspect-[4/3] overflow-hidden bg-slate-100 relative shadow-inner group">
+        <div className="aspect-square sm:aspect-[4/3] overflow-hidden bg-slate-100 relative shadow-inner group">
           <AnimatePresence mode="wait">
             <motion.img 
               key={activeImageIndex}
@@ -140,7 +172,7 @@ export default function ProductDetails() {
               transition={{ duration: 0.4 }}
               src={product.images[activeImageIndex]} 
               alt={product.title} 
-              className="w-full h-full object-cover touch-none"
+              className="w-full h-full object-contain bg-slate-50 touch-none"
               referrerPolicy="no-referrer"
             />
           </AnimatePresence>
@@ -295,23 +327,45 @@ export default function ProductDetails() {
           </div>
         </div>
       </div>
-
       {/* Fixed Footer Buttons */}
-      <div className="fixed bottom-24 left-4 right-4 z-50 flex gap-3 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
-        <Link 
-          to={`/chat/room_${product.id}`}
-          className="flex-1 flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-900 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
-        >
-          <MessageCircle className="w-4 h-4 text-indigo-600" />
-          Chat
-        </Link>
-        <Link 
-          to={`/checkout/${product.id}`}
-          className="flex-[2] flex items-center justify-center gap-2 bg-indigo-600 text-white h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-200 active:scale-95 transition-all"
-        >
-          <ShoppingBag className="w-4 h-4" />
-          Buy Now
-        </Link>
+      <div className="fixed bottom-24 left-4 right-4 z-50 flex gap-3 animate-in fade-in slide-in-from-bottom-8 duration-700">
+        {isOwner ? (
+          <Link 
+            to="/sell" 
+            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all text-center"
+          >
+            Manage My Listing
+          </Link>
+        ) : (
+          <>
+            <Link 
+              to={`/chat/room_${product.id}`}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all",
+                product.condition === 'New' 
+                  ? "bg-white border border-slate-200 text-slate-900" 
+                  : "bg-white border border-amber-200 text-amber-600"
+              )}
+            >
+              <MessageCircle className={cn("w-4 h-4", product.condition === 'New' ? "text-indigo-600" : "text-amber-500")} />
+              {product.condition === 'New' ? 'Chat' : 'Negotiate'}
+            </Link>
+            
+            {/* Hide Offer for fellow sellers */}
+            {!(product.condition !== 'New' && isUserSeller && product.sellerId !== 'system') && (
+              <Link 
+                to={product.condition === 'New' ? `/checkout/${product.id}` : `/chat/room_${product.id}`}
+                className={cn(
+                  "flex-[2] flex items-center justify-center gap-2 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all text-white",
+                  product.condition === 'New' ? "bg-indigo-600 shadow-indigo-200" : "bg-amber-500 shadow-amber-200"
+                )}
+              >
+                <ShoppingBag className="w-4 h-4" />
+                {product.condition === 'New' ? 'Buy Now' : 'Make an Offer'}
+              </Link>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

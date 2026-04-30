@@ -6,6 +6,7 @@ import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { motion } from 'motion/react';
+import { NIGERIA_STATES } from '../constants/nigeria';
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -20,7 +21,7 @@ export default function Settings() {
   const [location, setLocation] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
+  const [lga, setLga] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [bankDetails, setBankDetails] = useState({
@@ -58,7 +59,7 @@ export default function Settings() {
           const data = privateSnap.data();
           setPhoneNumber(data.phoneNumber || '');
           setAddress(data.address || '');
-          setCity(data.city || '');
+          setLga(data.lga || '');
           setState(data.state || '');
           setZipCode(data.zipCode || '');
           setBankDetails(data.bankDetails || { accountName: '', accountNumber: '', bankName: '' });
@@ -103,7 +104,7 @@ export default function Settings() {
       await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
         phoneNumber,
         address,
-        city,
+        lga,
         state,
         zipCode,
         bankDetails,
@@ -343,22 +344,36 @@ export default function Settings() {
             </div>
             <div className="grid grid-cols-2 gap-3">
                <div className="space-y-1.5">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter pl-1">City</p>
-                  <input 
-                    type="text" 
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter pl-1">State</p>
+                  <select 
+                    value={state}
+                    onChange={(e) => {
+                      setState(e.target.value);
+                      setLga('');
+                      setLocation(`${address ? address + ', ' : ''}${e.target.value}`);
+                    }}
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                  />
+                  >
+                    <option value="">Select State</option>
+                    {NIGERIA_STATES.map(s => <option key={s.state} value={s.state}>{s.state}</option>)}
+                  </select>
                </div>
                <div className="space-y-1.5">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter pl-1">State</p>
-                  <input 
-                    type="text" 
-                    value={state}
-                    onChange={(e) => setState(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
-                  />
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter pl-1">LGA</p>
+                  <select 
+                    value={lga}
+                    onChange={(e) => {
+                      setLga(e.target.value);
+                      setLocation(`${e.target.value}, ${state}`);
+                    }}
+                    disabled={!state}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all outline-none disabled:opacity-50"
+                  >
+                    <option value="">Select LGA</option>
+                    {state && NIGERIA_STATES.find(s => s.state === state)?.lgas.map(l => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
                </div>
             </div>
             <div className="space-y-1.5">

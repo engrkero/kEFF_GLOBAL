@@ -6,10 +6,10 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { NIGERIA_STATES } from '../constants/nigeria';
 
 const BRANDS = ['Apple', 'Samsung', 'Google', 'Xiaomi', 'OnePlus', 'Other'];
 const CONDITIONS = ['New', 'Mint', 'Good', 'Fair', 'Cracked'];
-const STATES = ['Lagos', 'Abuja', 'Port Harcourt', 'Kano', 'Ibadan', 'Other'];
 
 export default function Sell() {
   const { user } = useAuth();
@@ -23,7 +23,8 @@ export default function Sell() {
   const [model, setModel] = useState('');
   const [price, setPrice] = useState('');
   const [condition, setCondition] = useState('');
-  const [location, setLocation] = useState('');
+  const [selectedState, setSelectedState] = useState('');
+  const [selectedLga, setSelectedLga] = useState('');
   const [description, setDescription] = useState('');
   const [specs, setSpecs] = useState<Record<string, string>>({
     Storage: '',
@@ -76,6 +77,7 @@ export default function Sell() {
     if (!user) return;
     setLoading(true);
     try {
+      const location = `${selectedLga}, ${selectedState}`;
       const listingData = {
         title: `${brand} ${model}${specs.Storage ? ` - ${specs.Storage}` : ''}`,
         brand,
@@ -249,16 +251,35 @@ export default function Sell() {
                    </div>
                 </div>
 
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Location (State)</label>
-                   <select 
-                     value={location}
-                     onChange={(e) => setLocation(e.target.value)}
-                     className="w-full bg-white border border-slate-100 rounded-2xl px-4 py-4 text-sm font-bold focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
-                   >
-                      <option value="">Select State</option>
-                      {STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                   </select>
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">State</label>
+                      <select 
+                        value={selectedState}
+                        onChange={(e) => {
+                          setSelectedState(e.target.value);
+                          setSelectedLga('');
+                        }}
+                        className="w-full bg-white border border-slate-100 rounded-2xl px-4 py-4 text-sm font-bold focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                      >
+                         <option value="">Select State</option>
+                         {NIGERIA_STATES.map(s => <option key={s.state} value={s.state}>{s.state}</option>)}
+                      </select>
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">LGA</label>
+                      <select 
+                        value={selectedLga}
+                        onChange={(e) => setSelectedLga(e.target.value)}
+                        disabled={!selectedState}
+                        className="w-full bg-white border border-slate-100 rounded-2xl px-4 py-4 text-sm font-bold focus:ring-4 focus:ring-indigo-50 outline-none transition-all disabled:opacity-50"
+                      >
+                         <option value="">Select LGA</option>
+                         {selectedState && NIGERIA_STATES.find(s => s.state === selectedState)?.lgas.map(lga => (
+                           <option key={lga} value={lga}>{lga}</option>
+                         ))}
+                      </select>
+                   </div>
                 </div>
 
                 <div className="space-y-2">
@@ -289,7 +310,7 @@ export default function Sell() {
                 </button>
                 <button 
                   onClick={() => setStep(3)}
-                  disabled={!condition || !location}
+                  disabled={!condition || !selectedState || !selectedLga}
                   className="flex-[2] h-16 bg-slate-900 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-2xl active:scale-95 transition-all disabled:opacity-50"
                 >
                    Final Review

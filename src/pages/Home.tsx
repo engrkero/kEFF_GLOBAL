@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Smartphone, ShieldCheck, Zap, Loader2, Search as SearchIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp, where, deleteDoc, doc } from 'firebase/firestore';
 
 interface Listing {
   id: string;
@@ -15,31 +15,6 @@ interface Listing {
   location?: string;
 }
 
-const MOCK_DATA = [
-  {
-    title: 'iPhone 15 Pro Max',
-    brand: 'Apple',
-    model: '15 Pro Max',
-    price: 850000,
-    condition: 'Mint',
-    images: ['https://images.unsplash.com/photo-1696446701796-da61225697cc?auto=format&fit=crop&q=80&w=400'],
-    sellerId: 'system',
-    location: 'Lagos, NG',
-    status: 'Active'
-  },
-  {
-    title: 'Samsung Galaxy S24 Ultra',
-    brand: 'Samsung',
-    model: 'S24 Ultra',
-    price: 920000,
-    condition: 'New',
-    images: ['https://images.unsplash.com/photo-1707230491029-4c125697665b?auto=format&fit=crop&q=80&w=400'],
-    sellerId: 'system',
-    location: 'Abuja, NG',
-    status: 'Active'
-  }
-];
-
 export default function Home() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,26 +22,18 @@ export default function Home() {
   const fetchListings = async () => {
     const path = 'listings';
     try {
-      const q = query(collection(db, path), orderBy('createdAt', 'desc'), limit(10));
+      // One-time cleanup for system mock data
+      const systemQuery = query(collection(db, path), where('sellerId', '==', 'system'));
+      const systemSnap = await getDocs(systemQuery);
+      for (const docRef of systemSnap.docs) {
+        await deleteDoc(doc(db, path, docRef.id));
+      }
+
+      const q = query(collection(db, path), orderBy('createdAt', 'desc'), limit(20));
       const snapshot = await getDocs(q);
       
-      if (snapshot.empty) {
-        // Seed some data if empty
-        console.log("Seeding initial listings...");
-        for (const item of MOCK_DATA) {
-          await addDoc(collection(db, path), {
-            ...item,
-            createdAt: serverTimestamp()
-          });
-        }
-        // Re-fetch
-        const retrySnapshot = await getDocs(q);
-        const data = retrySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Listing));
-        setListings(data);
-      } else {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Listing));
-        setListings(data);
-      }
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Listing));
+      setListings(data);
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
     } finally {
