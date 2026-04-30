@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Shield, MapPin, Calendar, ChevronLeft, Loader2, MessageCircle, User, Package, Settings as SettingsIcon } from 'lucide-react';
+import { Star, Shield, MapPin, Calendar, ChevronLeft, Loader2, MessageCircle, User, Package, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 
 interface UserProfile {
@@ -18,6 +19,7 @@ interface UserProfile {
 interface Review {
   id: string;
   fromId: string;
+  toId: string;
   fromName?: string;
   fromAvatar?: string;
   rating: number;
@@ -31,7 +33,9 @@ export default function Profile() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsReceived, setReviewsReceived] = useState<Review[]>([]);
+  const [reviewsGiven, setReviewsGiven] = useState<Review[]>([]);
+  const [activeTab, setActiveTab] = useState<'received' | 'given'>('received');
   const [loading, setLoading] = useState(true);
 
   const isOwnProfile = user?.uid === id;
@@ -46,17 +50,16 @@ export default function Profile() {
         setProfile(profileDoc.data() as UserProfile);
       }
 
-      // Fetch Reviews for this user (where toId == id)
-      const q = query(
+      // Fetch Reviews Received (as seller)
+      const qReceived = query(
         collection(db, 'reviews'),
         where('toId', '==', id),
         orderBy('createdAt', 'desc'),
         limit(20)
       );
-      const reviewSnap = await getDocs(q);
-      const reviewData = await Promise.all(reviewSnap.docs.map(async (d) => {
+      const receivedSnap = await getDocs(qReceived);
+      const receivedData = await Promise.all(receivedSnap.docs.map(async (d) => {
         const r = d.data() as Review;
-        // Fetch reviewer info (optional optimization: store it in review doc)
         const reviewerSnap = await getDoc(doc(db, 'users', r.fromId, 'public', 'profile'));
         const reviewer = reviewerSnap.data();
         return {
@@ -66,7 +69,29 @@ export default function Profile() {
           fromAvatar: reviewer?.avatarUrl
         };
       }));
-      setReviews(reviewData);
+      setReviewsReceived(receivedData);
+
+      // Fetch Reviews Given (as buyer)
+      const qGiven = query(
+        collection(db, 'reviews'),
+        where('fromId', '==', id),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+      const givenSnap = await getDocs(qGiven);
+      const givenData = await Promise.all(givenSnap.docs.map(async (d) => {
+        const r = d.data() as Review;
+        const toSnap = await getDoc(doc(db, 'users', r.toId, 'public', 'profile'));
+        const to = toSnap.data();
+        return {
+          id: d.id,
+          ...r,
+          fromName: to?.displayName || 'KUFF Seller',
+          fromAvatar: to?.avatarUrl
+        };
+      }));
+      setReviewsGiven(givenData);
+
     } catch (error) {
       console.error(error);
     } finally {
@@ -139,6 +164,24 @@ export default function Profile() {
             </div>
           </div>
 
+          {/* Seller Stats Section */}
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+             <div className="p-4 bg-slate-50 rounded-2xl space-y-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Average Rating</p>
+                <div className="flex items-center gap-2">
+                   <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                   <p className="text-lg font-black text-slate-800">{(profile.rating || 0).toFixed(1)}</p>
+                </div>
+             </div>
+             <div className="p-4 bg-slate-50 rounded-2xl space-y-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Reviews</p>
+                <div className="flex items-center gap-2">
+                   <MessageCircle className="w-4 h-4 text-indigo-500 fill-indigo-500" />
+                   <p className="text-lg font-black text-slate-800">{profile.reviewCount || 0}</p>
+                </div>
+             </div>
+          </div>
+
           <div className="flex gap-3 pt-4">
             {isOwnProfile ? (
               <>
@@ -155,6 +198,14 @@ export default function Profile() {
                 >
                   <SettingsIcon className="w-4 h-4" />
                 </button>
+                {user?.email === 'kerenonen4@gmail.com' && (
+                  <button 
+                    onClick={() => navigate('/admin')}
+                    className="flex-1 h-14 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -176,19 +227,45 @@ export default function Profile() {
 
       {/* Reviews Section */}
       <section className="space-y-6">
-        <div className="flex justify-between items-end px-2">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Transaction Feedback</h3>
-          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{reviews.length} Recent</span>
+        <div className="flex flex-col gap-6 px-2">
+           <div className="flex justify-between items-end">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Transaction Feedback</h3>
+              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+                {activeTab === 'received' ? reviewsReceived.length : reviewsGiven.length} Total
+              </span>
+           </div>
+
+           {/* Tab Toggle */}
+           <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+              <button 
+                onClick={() => setActiveTab('received')}
+                className={cn(
+                  "flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  activeTab === 'received' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"
+                )}
+              >
+                As Seller
+              </button>
+              <button 
+                onClick={() => setActiveTab('given')}
+                className={cn(
+                  "flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  activeTab === 'given' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"
+                )}
+              >
+                As Buyer
+              </button>
+           </div>
         </div>
 
-        {reviews.length === 0 ? (
+        {(activeTab === 'received' ? reviewsReceived : reviewsGiven).length === 0 ? (
           <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-dashed border-slate-200">
             <MessageCircle className="w-10 h-10 text-slate-200 mx-auto mb-4" />
             <p className="text-sm font-black text-slate-400 uppercase tracking-widest">No reviews yet</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {reviews.map((rev, index) => (
+            {(activeTab === 'received' ? reviewsReceived : reviewsGiven).map((rev, index) => (
               <motion.div 
                 key={rev.id}
                 initial={{ opacity: 0, x: -10 }}
@@ -206,8 +283,12 @@ export default function Profile() {
                        )}
                     </div>
                     <div>
-                      <p className="font-black text-slate-800 text-sm">{rev.fromName}</p>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{rev.role === 'buyer' ? 'Verified Buyer' : 'Verified Seller'}</span>
+                      <p className="font-black text-slate-800 text-sm">
+                        {activeTab === 'received' ? rev.fromName : `To: ${rev.fromName}`}
+                      </p>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        {rev.role === 'buyer' ? 'Verified Buyer' : 'Verified Seller'}
+                      </span>
                     </div>
                   </div>
                   <div className="flex gap-0.5">

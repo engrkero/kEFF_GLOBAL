@@ -348,7 +348,7 @@ export default function ProductDetails() {
               )}
             >
               <MessageCircle className={cn("w-4 h-4", product.condition === 'New' ? "text-indigo-600" : "text-amber-500")} />
-              {product.condition === 'New' ? 'Chat' : 'Negotiate'}
+              {product.condition === 'New' ? 'Chat with Seller' : 'Negotiate'}
             </Link>
             
             {/* Hide Offer for fellow sellers */}

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, getDoc, setDoc, updateDoc, where, limit } from 'firebase/firestore';
 
 interface Message {
   id?: string;
@@ -14,7 +14,7 @@ interface Message {
   createdAt: any;
   type?: 'TEXT' | 'OFFER' | 'SYSTEM' | 'PAY_REQUEST';
   offerAmount?: number;
-  status?: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'PAID';
+  status?: 'SENT' | 'DELIVERED' | 'READ';
 }
 
 export default function Chat() {
@@ -31,7 +31,25 @@ export default function Chat() {
   const [product, setProduct] = useState<any>(null);
   const [isSeller, setIsSeller] = useState(false);
   const [profileComplete, setProfileComplete] = useState(true);
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  const [otherUserStatus, setOtherUserStatus] = useState<'online' | 'offline'>('offline');
+  const [isTyping, setIsTyping] = useState<Record<string, boolean>>({});
+  const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Presence Tracking
+  useEffect(() => {
+    if (!user) return;
+    const statusRef = doc(db, 'users', user.uid, 'status', 'presence');
+    
+    // Set online
+    setDoc(statusRef, { status: 'online', lastChanged: serverTimestamp() }, { merge: true });
+
+    // Mark offline on unmount
+    return () => {
+      setDoc(statusRef, { status: 'offline', lastChanged: serverTimestamp() }, { merge: true });
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!roomId || !user) return;
@@ -74,6 +92,10 @@ export default function Chat() {
         setProduct(prodData);
         setIsSeller(prodData.sellerId === user.uid);
         
+        const participants = roomSnap.exists() ? roomSnap.data().participants : [user.uid, prodData.sellerId];
+        const otherId = participants.find((id: string) => id !== user.uid);
+        setOtherUserId(otherId);
+
         // Add seller to participants if not present
         if (!roomSnap.exists() || !roomSnap.data().participants.includes(prodData.sellerId)) {
           await setDoc(roomRef, { 
@@ -92,17 +114,37 @@ export default function Chat() {
         const path = `chats/${roomId}/messages`;
         const q = query(collection(db, path), orderBy('createdAt', 'asc'));
         
-        const unsub = onSnapshot(q, (snapshot) => {
+        const unsubMessages = onSnapshot(q, (snapshot) => {
           const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
           setMessages(msgs);
           setLoading(false);
+
+          // Mark messages as read
+          msgs.forEach(msg => {
+            if (msg.senderId !== user.uid && msg.status !== 'READ') {
+              updateDoc(doc(db, `chats/${roomId}/messages`, msg.id!), { status: 'READ' });
+            }
+          });
         }, (error) => {
           console.error("Chat Messages Error:", error);
           setLoading(false);
           handleFirestoreError(error, OperationType.GET, path);
         });
 
-        return unsub;
+        // Listen for typing
+        const unsubRoom = onSnapshot(doc(db, 'chats', roomId), (snap) => {
+          if (snap.exists()) {
+            setIsTyping(snap.data().typing || {});
+            const parts = snap.data().participants;
+            const otherId = parts.find((id: string) => id !== user.uid);
+            setOtherUserId(otherId);
+          }
+        });
+
+        return () => {
+          unsubMessages();
+          unsubRoom();
+        };
       } catch (err) {
         console.error("Room Setup Error:", err);
         setLoading(false);
@@ -110,15 +152,34 @@ export default function Chat() {
       }
     };
 
-    let unsubscribe: () => void = () => {};
-    setupChat().then(unsub => { unsubscribe = unsub; });
+    let unsubChat: () => void = () => {};
+    setupChat().then(fn => { unsubChat = fn; });
 
-    return () => unsubscribe();
+    return () => unsubChat();
   }, [roomId, user]);
+
+  // Track Other User Presence
+  useEffect(() => {
+    if (!otherUserId) return;
+    const unsub = onSnapshot(doc(db, 'users', otherUserId, 'status', 'presence'), (snap) => {
+      if (snap.exists()) {
+        setOtherUserStatus(snap.data().status);
+      }
+    });
+    return () => unsub();
+  }, [otherUserId]);
+
+  const handleTyping = (typing: boolean) => {
+    if (!roomId || !user) return;
+    updateDoc(doc(db, 'chats', roomId), {
+      [`typing.${user.uid}`]: typing,
+      updatedAt: serverTimestamp()
+    });
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isTyping]);
 
   const handleSend = async (customText?: string, type: 'TEXT' | 'OFFER' | 'SYSTEM' | 'PAY_REQUEST' = 'TEXT', amount?: number) => {
     const textToSend = customText || inputText;
@@ -134,8 +195,17 @@ export default function Chat() {
         text: textToSend,
         type,
         ...(amount && { offerAmount: amount }),
+        status: otherUserStatus === 'online' ? 'DELIVERED' : 'SENT',
         createdAt: serverTimestamp()
       });
+      
+      // Update room last message
+      await updateDoc(doc(db, 'chats', roomId), {
+        lastMessage: textToSend,
+        updatedAt: serverTimestamp()
+      });
+
+      handleTyping(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -192,10 +262,14 @@ export default function Chat() {
               {user.displayName?.charAt(0) || 'U'}
             </div>
             <div>
-              <p className="font-black text-sm text-slate-800 tracking-tight">Support / Seller</p>
+              <p className="font-black text-sm text-slate-800 tracking-tight">
+                {product?.seller?.displayName || (isSeller ? 'Buyer' : 'Seller')}
+              </p>
               <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                <p className="text-[10px] text-green-600 font-black uppercase tracking-wider">Online</p>
+                <div className={cn("w-1.5 h-1.5 rounded-full", otherUserStatus === 'online' ? "bg-green-500 animate-pulse" : "bg-slate-300")} />
+                <p className={cn("text-[10px] font-black uppercase tracking-wider", otherUserStatus === 'online' ? "text-green-600" : "text-slate-400")}>
+                  {otherUserStatus === 'online' ? 'Online' : 'Offline'}
+                </p>
               </div>
             </div>
           </div>
@@ -282,13 +356,32 @@ export default function Chat() {
                     )}
                   </div>
                   {msg.createdAt && (
-                    <p className={cn("text-[9px] mt-2 opacity-100 text-slate-400 font-black uppercase tracking-wider")}>
-                      {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-                    </p>
+                    <div className={cn("flex items-center gap-1.5 mt-2", isMe ? "justify-end" : "justify-start")}>
+                      <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">
+                        {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                      </p>
+                      {isMe && (
+                        <div className="flex -space-x-1">
+                          <div className={cn("w-1.5 h-1.5 rounded-full", msg.status === 'READ' ? "bg-indigo-500" : msg.status === 'DELIVERED' ? "bg-green-500" : "bg-slate-300")} />
+                          {msg.status === 'READ' && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
             })}
+            
+            {/* Typing Indicator */}
+            {otherUserId && isTyping[otherUserId] && (
+              <div className="flex items-start gap-2 animate-in slide-in-from-left-2 duration-300">
+                <div className="bg-white px-4 py-3 rounded-[1.25rem] rounded-tl-none border border-slate-100 shadow-sm flex items-center gap-1">
+                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                </div>
+              </div>
+            )}
           </>
         )}
         <div ref={scrollRef} />
@@ -299,7 +392,10 @@ export default function Chat() {
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
           {!isSeller && (
             <button 
-              onClick={() => setInputText("Is this item still available?")}
+              onClick={() => {
+                setInputText("Is this item still available?");
+                inputRef.current?.focus();
+              }}
               className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
             >
               Still available?
@@ -323,7 +419,10 @@ export default function Chat() {
           )}
           {!isSeller && (
             <button 
-              onClick={() => setInputText("What is the battery health?")}
+              onClick={() => {
+                setInputText("What is the battery health?");
+                inputRef.current?.focus();
+              }}
               className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
             >
               Battery health?
@@ -338,8 +437,13 @@ export default function Chat() {
           <div className="flex-1 relative flex items-center">
             <input 
               type="text" 
+              ref={inputRef}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                handleTyping(e.target.value.length > 0);
+              }}
+              onBlur={() => handleTyping(false)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Type message..."
               className="w-full bg-slate-100 border border-slate-200/50 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all font-medium placeholder:text-slate-400"

@@ -15,6 +15,7 @@ import OrderDetails from './pages/OrderDetails';
 import Sell from './pages/Sell';
 import Wishlist from './pages/Wishlist';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 import InstallPrompt from './components/InstallPrompt';
 
 export default function App() {
@@ -28,6 +29,11 @@ export default function App() {
               <Route path="/" element={
                 <PageTransition>
                   <Home />
+                </PageTransition>
+              } />
+              <Route path="/admin" element={
+                <PageTransition>
+                  <Admin />
                 </PageTransition>
               } />
               <Route path="/browse" element={

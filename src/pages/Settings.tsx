@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera } from 'lucide-react';
+import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
@@ -39,6 +39,7 @@ export default function Settings() {
   const [twoFactor, setTwoFactor] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState('UNVERIFIED');
   const [verificationDocs, setVerificationDocs] = useState<string[]>([]);
+  const [bvn, setBvn] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -65,6 +66,7 @@ export default function Settings() {
           setBankDetails(data.bankDetails || { accountName: '', accountNumber: '', bankName: '' });
           setNotifs(data.notificationPrefs || { messages: true, orderUpdates: true, promotions: false });
           setTwoFactor(data.twoFactorEnabled || false);
+          setBvn(data.bvn || '');
         }
       } catch (error) {
         console.error(error);
@@ -86,16 +88,18 @@ export default function Settings() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (overrides?: any) => {
     if (!user) return;
     setSaving(true);
     try {
+      const vStatus = overrides?.verificationStatus ?? verificationStatus;
+      
       // Update Public Profile
       await setDoc(doc(db, 'users', user.uid, 'public', 'profile'), {
         displayName,
         avatarUrl,
         location,
-        verificationStatus,
+        verificationStatus: vStatus,
         verificationDocs,
         updatedAt: serverTimestamp()
       }, { merge: true });
@@ -110,6 +114,7 @@ export default function Settings() {
         bankDetails,
         notificationPrefs: notifs,
         twoFactorEnabled: twoFactor,
+        bvn,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -232,8 +237,27 @@ export default function Settings() {
               {verificationStatus === 'UNVERIFIED' && (
                 <div className="space-y-4">
                   <p className="text-xs font-medium text-indigo-100 leading-relaxed max-w-[280px]">
-                    To list high-value items, you must verify your identity. Upload a government ID and a proof of address.
+                    To list high-value items, you must verify your identity. Provide your BVN and upload verification documents.
                   </p>
+
+                  <div className="space-y-2">
+                      <p className="text-[9px] font-black text-indigo-200 uppercase tracking-widest pl-1">Bank Verification Number (BVN)</p>
+                      <div className="relative">
+                         <input 
+                           type="password" 
+                           value={bvn}
+                           onChange={(e) => setBvn(e.target.value)}
+                           placeholder="11-digit BVN"
+                           maxLength={11}
+                           className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm font-black text-white placeholder:text-indigo-300 outline-none focus:ring-2 focus:ring-white/30"
+                         />
+                         {bvn.length === 11 && (
+                           <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                              <CheckCircle2 className="w-4 h-4 text-green-400" />
+                           </div>
+                         )}
+                      </div>
+                  </div>
                   <div className="flex gap-2">
                     <label className={cn(
                       "flex-1 border rounded-xl p-3 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all",
@@ -255,7 +279,7 @@ export default function Settings() {
                   <button 
                     onClick={() => {
                       setVerificationStatus('PENDING');
-                      handleSave();
+                      handleSave({ verificationStatus: 'PENDING' });
                     }}
                     className="w-full bg-white text-indigo-600 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-indigo-900/20"
                   >

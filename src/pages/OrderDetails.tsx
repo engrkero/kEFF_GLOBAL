@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ChevronLeft, Package, Truck, Shield, AlertTriangle, CheckCircle2, Loader2, Info, ExternalLink, User } from 'lucide-react';
+import { ChevronLeft, Package, Truck, Shield, AlertTriangle, CheckCircle2, Loader2, Info, ExternalLink, User, Star } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -33,6 +33,51 @@ export default function OrderDetails() {
   const [shippingProvider, setShippingProvider] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+
+  const handleSubmitReview = async () => {
+    if (!order || !user) return;
+    setUpdating(true);
+    try {
+      await addDoc(collection(db, 'reviews'), {
+        fromId: user.uid,
+        toId: order.sellerId,
+        orderId: order.id,
+        listingId: order.listingId,
+        rating,
+        comment,
+        role: 'buyer',
+        createdAt: serverTimestamp()
+      });
+
+      // Update seller aggregate rating
+      const profileRef = doc(db, 'users', order.sellerId, 'public', 'profile');
+      const profileSnap = await getDoc(profileRef);
+      if (profileSnap.exists()) {
+        const pData = profileSnap.data();
+        const currentCount = pData.reviewCount || 0;
+        const currentRating = pData.rating || 0;
+        const newCount = currentCount + 1;
+        const newRating = ((currentRating * currentCount) + rating) / newCount;
+        
+        await updateDoc(profileRef, {
+          rating: newRating,
+          reviewCount: newCount
+        });
+      }
+
+      setReviewSubmitted(true);
+      alert("Review submitted successfully!");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to submit review.");
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const fetchOrder = async () => {
     if (!id || !user) return;
@@ -329,6 +374,51 @@ export default function OrderDetails() {
               </button>
            </div>
         </section>
+      )}
+
+      {/* Review Section */}
+      {isBuyer && order.escrowStatus === 'RELEASED' && !reviewSubmitted && (
+        <section className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-2xl space-y-6 animate-in zoom-in duration-500">
+           <div className="space-y-1 text-center">
+              <h3 className="text-xl font-black tracking-tight">Review your Experience</h3>
+              <p className="text-xs font-bold text-indigo-100">Rate the seller to help other buyers.</p>
+           </div>
+           
+           <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button 
+                  key={star} 
+                  onClick={() => setRating(star)}
+                  className="p-1 active:scale-90 transition-transform"
+                >
+                  <Star className={cn("w-8 h-8", rating >= star ? "fill-white text-white" : "text-indigo-400")} />
+                </button>
+              ))}
+           </div>
+
+           <textarea 
+             value={comment}
+             onChange={(e) => setComment(e.target.value)}
+             placeholder="Tell us about the product and delivery..."
+             className="w-full bg-white/10 border border-white/20 rounded-2xl p-4 text-sm font-medium placeholder:text-indigo-200 outline-none focus:ring-2 focus:ring-white/30 h-32"
+           />
+
+           <button 
+             onClick={handleSubmitReview}
+             disabled={updating || !comment}
+             className="w-full py-5 bg-white text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all disabled:opacity-50"
+           >
+             {updating ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Submit Review"}
+           </button>
+        </section>
+      )}
+
+      {reviewSubmitted && (
+        <div className="bg-green-50 p-8 rounded-[2.5rem] border border-green-100 text-center space-y-2">
+           <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
+           <h3 className="text-lg font-black text-green-900">Review Submitted</h3>
+           <p className="text-xs font-medium text-green-600">Thank you for your feedback!</p>
+        </div>
       )}
 
       {/* Dispute Section if already disputed */}
