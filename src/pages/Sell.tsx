@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Camera, Smartphone, MapPin, Tag, ChevronLeft, Loader2, Plus, X, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { Camera, Smartphone, MapPin, Tag, ChevronLeft, Loader2, Plus, X, ShieldCheck, Edit, PlusCircle, Package } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { NIGERIA_STATES } from '../constants/nigeria';
@@ -13,10 +13,13 @@ const CONDITIONS = ['New', 'Mint', 'Good', 'Fair', 'Cracked'];
 
 export default function Sell() {
   const { user } = useAuth();
+  const { editId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [images, setImages] = useState<string[]>([]);
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // 0 for selection screen
+  const [myListings, setMyListings] = useState<any[]>([]);
 
   // Form State
   const [brand, setBrand] = useState('');
@@ -31,6 +34,65 @@ export default function Sell() {
     RAM: '',
     Color: ''
   });
+
+  useEffect(() => {
+    if (editId) {
+      setStep(1);
+    }
+  }, [editId]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchMyListings = async () => {
+      try {
+        const q = query(
+          collection(db, 'listings'),
+          where('sellerId', '==', user.uid),
+          orderBy('createdAt', 'desc')
+        );
+        const snap = await getDocs(q);
+        setMyListings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    fetchMyListings();
+  }, [user]);
+
+  useEffect(() => {
+    if (!editId) return;
+    const fetchListing = async () => {
+      setFetching(true);
+      try {
+        const docSnap = await getDoc(doc(db, 'listings', editId));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.sellerId !== user?.uid) {
+            navigate('/');
+            return;
+          }
+          setBrand(data.brand || '');
+          setModel(data.model || '');
+          setPrice((data.price / 100).toString());
+          setCondition(data.condition || '');
+          setDescription(data.description || '');
+          setSpecs(data.specs || { Storage: '', RAM: '', Color: '' });
+          setImages(data.images || []);
+          
+          if (data.location) {
+            const [lga, state] = data.location.split(', ');
+            setSelectedState(state);
+            setSelectedLga(lga);
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setFetching(false);
+      }
+    };
+    fetchListing();
+  }, [editId, user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -88,15 +150,32 @@ export default function Sell() {
         description,
         images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=600'],
         specs,
-        sellerId: user.uid,
-        sellerName: user.displayName || 'Seller',
-        status: 'Active',
-        createdAt: serverTimestamp()
+        updatedAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, 'listings'), listingData);
-      navigate(`/product/${docRef.id}`);
+      if (editId) {
+        // Ensure we are not sending undefined fields
+        const cleanData = Object.fromEntries(
+          Object.entries(listingData).filter(([_, v]) => v !== undefined)
+        );
+        await updateDoc(doc(db, 'listings', editId), cleanData);
+        alert("Listing updated successfully!");
+        navigate(`/product/${editId}`);
+      } else {
+        const newListing = {
+          ...listingData,
+          sellerId: user.uid,
+          sellerName: user.displayName || 'Seller',
+          status: 'Active',
+          createdAt: serverTimestamp()
+        };
+        const docRef = await addDoc(collection(db, 'listings'), newListing);
+        alert("Listing published successfully!");
+        navigate(`/product/${docRef.id}`);
+      }
     } catch (error) {
+      console.error(error);
+      alert("Failed to save listing. Please check your internet connection and try again.");
       handleFirestoreError(error, OperationType.WRITE, 'listings');
     } finally {
       setLoading(false);
@@ -121,22 +200,99 @@ export default function Sell() {
       {/* Header */}
       <div className="flex justify-between items-center">
          <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
+            <button 
+              onClick={() => {
+                if (editId) navigate(-1);
+                else if (step > 0) setStep(0);
+                else navigate(-1);
+              }} 
+              className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100 active:scale-95 transition-all"
+            >
                <ChevronLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-3xl font-black tracking-tighter text-slate-900 leading-none">List Your<br/>Device</h1>
+            <h1 className="text-3xl font-black tracking-tighter text-slate-900 leading-none">
+              {editId ? 'Edit Your' : step === 0 ? 'Marketplace' : 'List Your'}<br/>
+              {step === 0 ? 'Store' : 'Device'}
+            </h1>
          </div>
       </div>
 
-      {/* Steps Indicator */}
-      <div className="flex gap-2">
-         {[1, 2, 3].map(i => (
-           <div key={i} className={cn(
-             "h-1.5 rounded-full transition-all duration-500",
-             i === step ? "flex-[2] bg-indigo-600" : i < step ? "flex-1 bg-green-500" : "flex-1 bg-slate-200"
-           )} />
-         ))}
-      </div>
+      {fetching ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        </div>
+      ) : (
+        <>
+          {step === 0 && (
+            <motion.div 
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: 1, y: 0 }}
+               className="space-y-8"
+            >
+               <div className="grid grid-cols-1 gap-6 max-w-lg mx-auto w-full">
+                  <button 
+                    onClick={() => setStep(1)}
+                    className="group bg-indigo-600 p-10 rounded-[3rem] flex flex-col items-center gap-6 text-white shadow-2xl shadow-indigo-200 active:scale-95 transition-all w-full"
+                  >
+                     <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center backdrop-blur-sm border border-white/10">
+                        <PlusCircle className="w-10 h-10" />
+                     </div>
+                     <div className="text-center">
+                        <h3 className="font-black text-2xl tracking-tight uppercase">Add Product</h3>
+                        <p className="text-indigo-100/60 text-xs font-bold uppercase tracking-widest mt-2">New Device Listing</p>
+                     </div>
+                  </button>
+
+                  <div className="space-y-6">
+                     <div className="flex justify-between items-end px-4">
+                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] leading-none">Your Inventory</h4>
+                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest leading-none bg-indigo-50 px-2.5 py-1 rounded-full">{myListings.length} Total</span>
+                     </div>
+                     
+                     {myListings.length === 0 ? (
+                        <div className="bg-slate-50 p-12 rounded-[3.5rem] text-center border border-dashed border-slate-200">
+                           <Package className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                           <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No listings available</p>
+                        </div>
+                     ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-5 px-1">
+                           {myListings.map(item => (
+                              <button 
+                                key={item.id}
+                                onClick={() => navigate(`/edit/${item.id}`)}
+                                className="bg-white p-4 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col gap-4 active:scale-95 transition-all text-left group hover:shadow-xl hover:shadow-slate-100 transition-all duration-500"
+                              >
+                                 <div className="aspect-[4/5] overflow-hidden rounded-[2rem] bg-slate-50 relative border border-slate-50 shadow-inner">
+                                    <img src={item.images[0]} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+                                    <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/10 transition-colors duration-500" />
+                                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-300">
+                                       <Edit className="w-3 h-3 text-indigo-600" />
+                                    </div>
+                                 </div>
+                                 <div className="px-1 space-y-1">
+                                    <p className="text-[11px] font-black text-slate-800 truncate leading-tight">{item.title}</p>
+                                    <p className="text-indigo-600 font-black text-sm leading-none">₦{(item.price/100).toLocaleString()}</p>
+                                 </div>
+                              </button>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+               </div>
+            </motion.div>
+          )}
+
+          {/* Steps Indicator */}
+          {step > 0 && (
+            <div className="flex gap-2">
+               {[1, 2, 3].map(i => (
+                 <div key={i} className={cn(
+                   "h-1.5 rounded-full transition-all duration-500",
+                   i === step ? "flex-[2] bg-indigo-600" : i < step ? "flex-1 bg-green-500" : "flex-1 bg-slate-200"
+                 )} />
+               ))}
+            </div>
+          )}
 
       <AnimatePresence mode="wait">
         {step === 1 && (
@@ -364,12 +520,14 @@ export default function Sell() {
                   disabled={loading || !description}
                   className="flex-[2] h-16 bg-indigo-600 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-3"
                 >
-                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "PUBLISH LISTING"}
+                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : editId ? "UPDATE LISTING" : "PUBLISH LISTING"}
                 </button>
              </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
+    </>
+  )}
+</div>
+);
 }

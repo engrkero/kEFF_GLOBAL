@@ -61,6 +61,11 @@ export default function App() {
                   <Sell />
                 </PageTransition>
               } />
+              <Route path="/edit/:editId" element={
+                <PageTransition>
+                  <Sell />
+                </PageTransition>
+              } />
               <Route path="/wishlist" element={
                 <PageTransition>
                   <Wishlist />

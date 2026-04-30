@@ -152,8 +152,8 @@ export default function ProductDetails() {
       {/* ... (image gallery remains same) ... */}
 
       {/* Image Gallery carousel */}
-      <div className="space-y-4 -mx-4 -mt-24">
-        <div className="aspect-square sm:aspect-[4/3] overflow-hidden bg-slate-100 relative shadow-inner group">
+      <div className="space-y-4 -mx-4 -mt-24 sm:mt-0 sm:mx-0">
+        <div className="aspect-square sm:aspect-[4/3] overflow-hidden bg-slate-100 relative shadow-inner group rounded-[2.5rem] sm:rounded-[3.5rem] shadow-2xl shadow-slate-200/50">
           <AnimatePresence mode="wait">
             <motion.img 
               key={activeImageIndex}
@@ -169,10 +169,10 @@ export default function ProductDetails() {
               initial={{ opacity: 0, scale: 1.1 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.4 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
               src={product.images[activeImageIndex]} 
               alt={product.title} 
-              className="w-full h-full object-contain bg-slate-50 touch-none"
+              className="w-full h-full object-cover touch-none"
               referrerPolicy="no-referrer"
             />
           </AnimatePresence>
@@ -330,16 +330,16 @@ export default function ProductDetails() {
       {/* Fixed Footer Buttons */}
       <div className="fixed bottom-24 left-4 right-4 z-50 flex gap-3 animate-in fade-in slide-in-from-bottom-8 duration-700">
         {isOwner ? (
-          <Link 
-            to="/sell" 
+          <button 
+            onClick={() => navigate(`/edit/${product.id}`)}
             className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all text-center"
           >
             Manage My Listing
-          </Link>
+          </button>
         ) : (
           <>
-            <Link 
-              to={`/chat/room_${product.id}`}
+            <button 
+              onClick={() => navigate(`/chat/room_${product.id}`)}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all",
                 product.condition === 'New' 
@@ -349,12 +349,20 @@ export default function ProductDetails() {
             >
               <MessageCircle className={cn("w-4 h-4", product.condition === 'New' ? "text-indigo-600" : "text-amber-500")} />
               {product.condition === 'New' ? 'Chat with Seller' : 'Negotiate'}
-            </Link>
+            </button>
             
             {/* Hide Offer for fellow sellers */}
             {!(product.condition !== 'New' && isUserSeller && product.sellerId !== 'system') && (
-              <Link 
-                to={product.condition === 'New' ? `/checkout/${product.id}` : `/chat/room_${product.id}`}
+              <button 
+                onClick={() => {
+                  if (product.condition === 'New') {
+                    navigate(`/checkout/${product.id}`);
+                  } else {
+                    navigate(`/chat/room_${product.id}`, { 
+                      state: { initialMessage: "Hello, I would like to make an offer on this item." } 
+                    });
+                  }
+                }}
                 className={cn(
                   "flex-[2] flex items-center justify-center gap-2 h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all text-white",
                   product.condition === 'New' ? "bg-indigo-600 shadow-indigo-200" : "bg-amber-500 shadow-amber-200"
@@ -362,7 +370,7 @@ export default function ProductDetails() {
               >
                 <ShoppingBag className="w-4 h-4" />
                 {product.condition === 'New' ? 'Buy Now' : 'Make an Offer'}
-              </Link>
+              </button>
             )}
           </>
         )}

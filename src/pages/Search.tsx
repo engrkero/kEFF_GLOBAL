@@ -260,7 +260,7 @@ export default function Search() {
         ) : (
           <div className="space-y-4">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{listings.length} Results Found</p>
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {listings.map((item) => (
                 <Link 
                   key={item.id} 

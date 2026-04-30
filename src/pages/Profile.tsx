@@ -28,6 +28,14 @@ interface Review {
   role: 'buyer' | 'seller';
 }
 
+interface Listing {
+  id: string;
+  title: string;
+  price: number;
+  condition: string;
+  images: string[];
+}
+
 export default function Profile() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -35,8 +43,10 @@ export default function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [reviewsReceived, setReviewsReceived] = useState<Review[]>([]);
   const [reviewsGiven, setReviewsGiven] = useState<Review[]>([]);
-  const [activeTab, setActiveTab] = useState<'received' | 'given'>('received');
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [activeTab, setActiveTab] = useState<'received' | 'given' | 'listings'>('received');
   const [loading, setLoading] = useState(true);
+  const [editingMode, setEditingMode] = useState(false);
 
   const isOwnProfile = user?.uid === id;
 
@@ -91,6 +101,15 @@ export default function Profile() {
         };
       }));
       setReviewsGiven(givenData);
+
+      // Fetch User Listings
+      const qListings = query(
+        collection(db, 'listings'),
+        where('sellerId', '==', id),
+        orderBy('createdAt', 'desc')
+      );
+      const listingsSnap = await getDocs(qListings);
+      setListings(listingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Listing)));
 
     } catch (error) {
       console.error(error);
@@ -237,6 +256,17 @@ export default function Profile() {
 
            {/* Tab Toggle */}
            <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+              {isOwnProfile && (
+                <button 
+                  onClick={() => setActiveTab('listings')}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                    activeTab === 'listings' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400"
+                  )}
+                >
+                  My Store
+                </button>
+              )}
               <button 
                 onClick={() => setActiveTab('received')}
                 className={cn(
@@ -258,7 +288,76 @@ export default function Profile() {
            </div>
         </div>
 
-        {(activeTab === 'received' ? reviewsReceived : reviewsGiven).length === 0 ? (
+        {activeTab === 'listings' && isOwnProfile && (
+          <div className="space-y-6">
+            <div className="flex gap-3">
+               <button 
+                 onClick={() => setEditingMode(!editingMode)}
+                 className={cn(
+                   "flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border",
+                   editingMode ? "bg-red-50 border-red-200 text-red-600" : "bg-white border-slate-200 text-slate-900"
+                 )}
+               >
+                 {editingMode ? "Stop Editing" : "Edit Listing"}
+               </button>
+               <button 
+                 onClick={() => navigate('/sell')}
+                 className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2"
+               >
+                 <Package className="w-3.5 h-3.5" /> Add Product
+               </button>
+            </div>
+
+            {listings.length === 0 ? (
+              <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-dashed border-slate-200">
+                 <Package className="w-10 h-10 text-slate-200 mx-auto mb-4" />
+                 <p className="text-sm font-black text-slate-400 uppercase tracking-widest">No listings yet</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+                {listings.map((item) => (
+                  <motion.div 
+                    key={item.id}
+                    layout
+                    className="relative"
+                  >
+                    <div className={cn(
+                      "group block space-y-3 transition-all",
+                      editingMode && "opacity-50 grayscale scale-[0.98]"
+                    )}>
+                      <div className="aspect-[4/5] overflow-hidden rounded-3xl bg-slate-100 relative border border-slate-200/50 shadow-sm">
+                        <img 
+                          src={item.images[0]} 
+                          alt={item.title} 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      <div className="px-1 space-y-1">
+                        <h3 className="font-bold text-slate-800 text-xs truncate leading-tight">{item.title}</h3>
+                        <p className="text-indigo-600 font-black text-sm tracking-tight">₦{(item.price / 100).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    {editingMode && (
+                      <button 
+                        onClick={() => navigate(`/edit/${item.id}`)}
+                        className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/20 backdrop-blur-sm rounded-3xl border-2 border-indigo-500 shadow-xl animate-in zoom-in-75 duration-200"
+                      >
+                         <div className="bg-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform -translate-y-2">
+                            <SettingsIcon className="w-6 h-6 text-white" />
+                         </div>
+                         <span className="text-[9px] font-black text-indigo-900 uppercase tracking-widest">Edit Details</span>
+                      </button>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(activeTab === 'received' || activeTab === 'given') && (
+          (activeTab === 'received' ? reviewsReceived : reviewsGiven).length === 0 ? (
           <div className="bg-slate-50 rounded-[2rem] p-12 text-center border border-dashed border-slate-200">
             <MessageCircle className="w-10 h-10 text-slate-200 mx-auto mb-4" />
             <p className="text-sm font-black text-slate-400 uppercase tracking-widest">No reviews yet</p>
@@ -302,7 +401,7 @@ export default function Profile() {
               </motion.div>
             ))}
           </div>
-        )}
+        ))}
       </section>
     </div>
   );

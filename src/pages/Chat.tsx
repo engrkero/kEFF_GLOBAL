@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Send, Image as ImageIcon, ChevronLeft, MoreVertical, MessageCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -20,7 +20,14 @@ interface Message {
 export default function Chat() {
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+  
+  useEffect(() => {
+    if (location.state?.initialMessage) {
+      setInputText(location.state.initialMessage);
+    }
+  }, [location.state]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);

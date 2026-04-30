@@ -8,6 +8,8 @@ import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firest
 import { motion } from 'motion/react';
 import { NIGERIA_STATES } from '../constants/nigeria';
 
+import PaystackPop from '@paystack/inline-js';
+
 export default function Settings() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -42,11 +44,16 @@ export default function Settings() {
   const [bvn, setBvn] = useState('');
   const [feePaid, setFeePaid] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       if (!user) return;
       try {
+        // Check Admin Status
+        const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+        setIsAdmin(adminSnap.exists() || user.email === 'kerenonen4@gmail.com');
+
         const publicSnap = await getDoc(doc(db, 'users', user.uid, 'public', 'profile'));
         if (publicSnap.exists()) {
           const data = publicSnap.data();
@@ -133,22 +140,46 @@ export default function Settings() {
 
   const handlePayment = async () => {
     if (!user) return;
+    
+    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!publicKey) {
+      alert("Paystack Public Key is not configured. Please add VITE_PAYSTACK_PUBLIC_KEY to your settings.");
+      return;
+    }
+
     setIsPaying(true);
-    // Simulate payment gateway integration
-    setTimeout(async () => {
-      try {
-        await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
-          verificationFeePaid: true,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-        setFeePaid(true);
+
+    const paystack = new PaystackPop();
+    paystack.newTransaction({
+      key: publicKey,
+      email: user.email || '',
+      amount: 550 * 100, // ₦550 in kobo
+      currency: 'NGN',
+      onSuccess: async (transaction: any) => {
+        try {
+          await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
+            verificationFeePaid: true,
+            paystackReference: transaction.reference,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          setFeePaid(true);
+          alert("Payment successful! Your verification fee has been recorded.");
+        } catch (e) {
+          console.error(e);
+          alert("Payment successful but failed to sync. Reference: " + transaction.reference);
+        } finally {
+          setIsPaying(false);
+        }
+      },
+      onCancel: () => {
         setIsPaying(false);
-        alert("Payment successful! ₦550 verification fee recorded.");
-      } catch (e) {
-        console.error(e);
+      },
+      onError: (err: any) => {
+        console.error(err);
         setIsPaying(false);
+        alert("Payment window failed to load.");
       }
-    }, 1500);
+    });
   };
 
   const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
@@ -212,6 +243,24 @@ export default function Settings() {
           <LogOut className="w-5 h-5" />
         </button>
       </div>
+
+      {isAdmin && (
+        <section className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+           <div className="relative z-10 flex items-center justify-between">
+              <div className="space-y-1">
+                 <h3 className="text-xl font-black tracking-tight">Admin Console</h3>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">System Management & Verification</p>
+              </div>
+              <button 
+                onClick={() => navigate('/admin')}
+                className="px-6 py-3 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-slate-950/20"
+              >
+                Open Terminal
+              </button>
+           </div>
+           <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-1000" />
+        </section>
+      )}
 
       <div className="space-y-8">
         {/* Profile Section */}

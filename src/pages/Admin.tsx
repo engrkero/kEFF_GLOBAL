@@ -12,10 +12,11 @@ interface PendingSeller {
   userId: string;
   displayName: string;
   avatarUrl?: string;
-  verificationDocs?: string;
+  verificationDocs?: string[];
   verificationStatus: string;
   bvn?: string;
   feePaid?: boolean;
+  paystackRef?: string;
 }
 
 export default function Admin() {
@@ -55,6 +56,7 @@ export default function Admin() {
           userId,
           bvn: privateData.bvn,
           feePaid: privateData.verificationFeePaid,
+          paystackRef: privateData.paystackReference,
           ...d.data()
         } as PendingSeller;
       }));

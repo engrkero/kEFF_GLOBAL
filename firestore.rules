@@ -118,11 +118,14 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isSignedIn() && isValidListing(incoming());
       allow update: if (isOwner(existing().sellerId) || isAdmin()) && (
-        // Action: Edit Listing
-        (incoming().status == 'Active' && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'price', 'images', 'specs', 'condition'])) ||
-        // Action: Mark as Sold (System or Seller)
-        (incoming().status == 'Sold' && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
-      ) && isValidListing(incoming());
+        // Action: Edit Listing (Allow all product fields + status changes)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'price', 'images', 'specs', 'condition', 'brand', 'model', 'location', 'status', 'updatedAt']))
+      ) && (
+        // Ensure core identifiers remain untampered
+        incoming().sellerId == existing().sellerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time
+      );
       allow delete: if isOwner(existing().sellerId) || isAdmin();
     }
 
