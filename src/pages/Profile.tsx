@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Shield, MapPin, Calendar, ChevronLeft, Loader2, MessageCircle, User, Package, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
+import { Star, Shield, MapPin, Calendar, ChevronLeft, Loader2, MessageCircle, User, Package, Settings as SettingsIcon, ShieldCheck, Flag, Check, CheckCheck, X } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
@@ -47,8 +47,36 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState<'received' | 'given' | 'listings'>('received');
   const [loading, setLoading] = useState(true);
   const [editingMode, setEditingMode] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
 
   const isOwnProfile = user?.uid === id;
+
+  const handleReport = async () => {
+    if (!id || !user || !reportReason) return;
+    setIsReporting(true);
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reportedUserId: id,
+        reporterId: user.uid,
+        reason: reportReason,
+        details: reportDetails,
+        status: 'PENDING',
+        createdAt: serverTimestamp()
+      });
+      alert("User has been reported. Our moderators will review this shortly.");
+      setIsReportModalOpen(false);
+      setReportReason('');
+      setReportDetails('');
+    } catch (e) {
+      console.error(e);
+      alert("Failed to send report.");
+    } finally {
+      setIsReporting(false);
+    }
+  };
 
   const fetchData = async () => {
     if (!id) return;
@@ -234,6 +262,15 @@ export default function Profile() {
             )}
           </div>
 
+          {!isOwnProfile && (
+            <button 
+              onClick={() => setIsReportModalOpen(true)}
+              className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-500 transition-colors flex items-center justify-center gap-2"
+            >
+              <Flag className="w-3 h-3" /> Report User for Violations
+            </button>
+          )}
+
           {isOwnProfile && user?.email === 'kerenonen4@gmail.com' && (
             <motion.button 
               initial={{ opacity: 0, y: 10 }}
@@ -253,6 +290,81 @@ export default function Profile() {
           )}
         </div>
       </section>
+
+      {/* Report Modal */}
+      <AnimatePresence>
+        {isReportModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md bg-white rounded-[3rem] p-8 space-y-6 shadow-2xl overflow-hidden relative"
+            >
+              <button 
+                onClick={() => setIsReportModalOpen(false)}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              <div className="space-y-1">
+                 <h3 className="text-xl font-black text-slate-800 tracking-tight">Report Account</h3>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Maintaining Marketplace Integrity</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Reason for Report</p>
+                  <select 
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-red-50 focus:border-red-200 outline-none transition-all appearance-none"
+                  >
+                    <option value="">Select a reason...</option>
+                    <option value="FRAUD">Fraud or Scam Attempt</option>
+                    <option value="HARASSMENT">Harassment or Abuse</option>
+                    <option value="COUNTERFEIT">Counterfeit/Fake Product</option>
+                    <option value="DECEPTIVE">Deceptive Pricing/Information</option>
+                    <option value="OTHER">Other Reason</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Additional Details</p>
+                  <textarea 
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Provide specific details about the violation..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-medium focus:ring-2 focus:ring-red-50 focus:border-red-200 outline-none transition-all h-32"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                 <button 
+                   onClick={() => setIsReportModalOpen(false)}
+                   className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+                 >
+                   Cancel
+                 </button>
+                 <button 
+                   onClick={handleReport}
+                   disabled={isReporting || !reportReason}
+                   className="flex-[2] py-4 bg-red-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-red-100 active:scale-95 transition-all disabled:opacity-50"
+                 >
+                   {isReporting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Submit Report"}
+                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Reviews Section */}
       <section className="space-y-6">

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, User, CheckCircle2, XCircle, Loader2, ChevronLeft, Search, CreditCard } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
-import { collectionGroup, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collectionGroup, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, getCountFromServer, collection } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -24,6 +24,11 @@ export default function Admin() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [sellers, setSellers] = useState<PendingSeller[]>([]);
+  const [stats, setStats] = useState({
+    activeListings: 0,
+    totalUsers: 0,
+    completedTransactions: 0
+  });
   const [processing, setProcessing] = useState<string | null>(null);
 
   // Hardcoded Admin check (matches firestore rules)
@@ -35,7 +40,32 @@ export default function Admin() {
       return;
     }
     fetchPendingSellers();
+    fetchMarketStats();
   }, [user]);
+
+  const fetchMarketStats = async () => {
+    try {
+      // Fetch Active Listings
+      const listingsQuery = query(collection(db, 'listings'), where('status', '==', 'Active'));
+      const listingsSnap = await getCountFromServer(listingsQuery);
+      
+      // Fetch Total Users
+      const usersQuery = collectionGroup(db, 'profile');
+      const usersSnap = await getCountFromServer(usersQuery);
+
+      // Fetch Completed Transactions
+      const ordersQuery = query(collection(db, 'orders'), where('escrowStatus', '==', 'RELEASED'));
+      const ordersSnap = await getCountFromServer(ordersQuery);
+
+      setStats({
+        activeListings: listingsSnap.data().count,
+        totalUsers: usersSnap.data().count,
+        completedTransactions: ordersSnap.data().count
+      });
+    } catch (e) {
+      console.error("Stats fetch failed:", e);
+    }
+  };
 
   const fetchPendingSellers = async () => {
     setLoading(true);
@@ -105,7 +135,26 @@ export default function Admin() {
       </header>
 
       <div className="max-w-xl mx-auto p-6 space-y-8">
-        {/* Stats */}
+        {/* Marketplace Statistics */}
+        <section className="space-y-4">
+           <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] px-2">Marketplace Performance</h3>
+           <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
+                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Active Listings</p>
+                 <p className="text-xl font-black text-slate-800">{stats.activeListings}</p>
+              </div>
+              <div className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
+                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Growth (Users)</p>
+                 <p className="text-xl font-black text-slate-800">{stats.totalUsers}</p>
+              </div>
+              <div className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
+                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Closed Deals</p>
+                 <p className="text-xl font-black text-slate-800">{stats.completedTransactions}</p>
+              </div>
+           </div>
+        </section>
+
+        {/* Pending Verifications Stats Overlay */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-1">
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Requests</p>

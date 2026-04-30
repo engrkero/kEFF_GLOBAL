@@ -305,7 +305,7 @@ export default function OrderDetails() {
            ) : isSeller ? (
              <div className="space-y-4 pt-2">
                 <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 mb-2">
-                   <p className="text-[10px] font-bold text-indigo-700 leading-relaxed">Provide tracking information to let the buyer know the item is on its way. This will update the status to Delivered.</p>
+                   <p className="text-[10px] font-bold text-indigo-700 leading-relaxed">Provide tracking info to update the status to Delivered and alert the buyer.</p>
                 </div>
                 <div className="grid grid-cols-1 gap-3">
                   <input 

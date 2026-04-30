@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Send, Image as ImageIcon, ChevronLeft, MoreVertical, MessageCircle, Loader2 } from 'lucide-react';
+import { Send, Image as ImageIcon, ChevronLeft, MoreVertical, MessageCircle, Loader2, Check, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -394,9 +394,14 @@ export default function Chat() {
                         {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       </p>
                       {isMe && (
-                        <div className="flex -space-x-1">
-                          <div className={cn("w-1.5 h-1.5 rounded-full", msg.status === 'READ' ? "bg-indigo-500" : msg.status === 'DELIVERED' ? "bg-green-500" : "bg-slate-300")} />
-                          {msg.status === 'READ' && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+                        <div className="flex items-center gap-1">
+                          {msg.status === 'READ' ? (
+                            <CheckCheck className="w-3 h-3 text-indigo-500" />
+                          ) : msg.status === 'DELIVERED' ? (
+                            <CheckCheck className="w-3 h-3 text-slate-300" />
+                          ) : (
+                            <Check className="w-3 h-3 text-slate-300" />
+                          )}
                         </div>
                       )}
                     </div>
@@ -407,11 +412,15 @@ export default function Chat() {
             
             {/* Typing Indicator */}
             {otherUserId && isTyping[otherUserId] && (
-              <div className="flex items-start gap-2 animate-in slide-in-from-left-2 duration-300">
-                <div className="bg-white px-4 py-3 rounded-[1.25rem] rounded-tl-none border border-slate-100 shadow-sm flex items-center gap-1">
-                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
-                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
-                  <motion.div animate={{ y: [0, -3, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+              <div className="flex items-end gap-2 animate-in slide-in-from-left-2 duration-300 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
+                   {isSeller ? 'B' : 'S'}
+                </div>
+                <div className="bg-white px-4 py-3 rounded-[1.25rem] rounded-bl-none border border-slate-100 shadow-sm flex items-center gap-1.5">
+                  <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                  <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                  <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">Typing...</span>
                 </div>
               </div>
             )}
