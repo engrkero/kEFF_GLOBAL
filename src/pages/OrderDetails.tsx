@@ -32,6 +32,7 @@ export default function OrderDetails() {
   // Seller side state
   const [shippingProvider, setShippingProvider] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
+  const [profileIncomplete, setProfileIncomplete] = useState(false);
 
   const fetchOrder = async () => {
     if (!id || !user) return;
@@ -50,6 +51,18 @@ export default function OrderDetails() {
         const listingSnap = await getDoc(doc(db, 'listings', data.listingId));
         setOrder({ id: docSnap.id, ...data, listing: listingSnap.data() });
         
+        // Check buyer profile if they are the buyer
+        if (data.buyerId === user.uid) {
+           const profileSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
+           if (profileSnap.exists()) {
+              const pData = profileSnap.data();
+              const isIncomplete = !pData.address || !pData.state || !pData.phoneNumber;
+              setProfileIncomplete(isIncomplete);
+           } else {
+              setProfileIncomplete(true);
+           }
+        }
+
         if (data.shippingProvider) setShippingProvider(data.shippingProvider);
         if (data.trackingNumber) setTrackingNumber(data.trackingNumber);
       }
@@ -128,7 +141,7 @@ export default function OrderDetails() {
         </div>
       </div>
 
-      {/* Status Banner */}
+       {/* Status Banner */}
       <div className={cn(
         "p-6 rounded-[2.5rem] flex items-center justify-between shadow-xl shadow-slate-100 border",
         order.escrowStatus === 'RELEASED' ? "bg-green-50 border-green-100 text-green-900" :
@@ -153,6 +166,29 @@ export default function OrderDetails() {
            <Shield className="w-8 h-8 text-indigo-600/20" />
         )}
       </div>
+
+      {/* Profile Incomplete Prompt for Buyer */}
+      {isBuyer && profileIncomplete && (order.escrowStatus === 'HELD_IN_ESCROW' || order.escrowStatus === 'PENDING_PAYMENT') && (
+        <div className="mx-2 p-6 bg-amber-50 border border-amber-100 rounded-[2.5rem] space-y-4 animate-in slide-in-from-top-4 duration-500">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-amber-500 rounded-2xl shadow-lg shadow-amber-100">
+               <User className="w-5 h-5 text-white" />
+            </div>
+            <div className="space-y-1">
+               <h4 className="font-black text-sm text-amber-900 tracking-tight">Delivery Info Missing</h4>
+               <p className="text-[10px] font-medium text-amber-700 leading-relaxed">
+                  We need your address and phone number to arrange your delivery. Please complete your profile now.
+               </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate('/settings')}
+            className="w-full py-4 bg-amber-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all"
+          >
+            Complete Profile
+          </button>
+        </div>
+      )}
 
       {/* Listing Info */}
       <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col gap-5">

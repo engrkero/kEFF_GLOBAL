@@ -71,7 +71,7 @@ service cloud.firestore {
         && data.senderId == request.auth.uid
         && data.createdAt == request.time
         && request.auth.uid in room.participants
-        && (!('type' in data) || data.type in ['TEXT', 'OFFER', 'SYSTEM'])
+        && (!('type' in data) || data.type in ['TEXT', 'OFFER', 'SYSTEM', 'PAY_REQUEST'])
         && (!('offerAmount' in data) || data.offerAmount is int);
     }
 

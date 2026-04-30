@@ -30,10 +30,28 @@ export default function Chat() {
   const [payAmount, setPayAmount] = useState('');
   const [product, setProduct] = useState<any>(null);
   const [isSeller, setIsSeller] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!roomId || !user) return;
+
+    // Check if profile is complete
+    const checkProfile = async () => {
+      try {
+        const profileSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
+        if (profileSnap.exists()) {
+          const data = profileSnap.data();
+          const isComplete = !!(data.address && data.state && data.phoneNumber);
+          setProfileComplete(isComplete);
+        } else {
+          setProfileComplete(false);
+        }
+      } catch (e) {
+        console.error("Profile check failed", e);
+      }
+    };
+    checkProfile();
 
     // Ensure Chat Room exists
     const checkRoom = async () => {
@@ -66,18 +84,34 @@ export default function Chat() {
         }
       }
     };
-    checkRoom();
-
-    const path = `chats/${roomId}/messages`;
-    const q = query(collection(db, path), orderBy('createdAt', 'asc'));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-      setMessages(msgs);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
-    });
+    const setupChat = async () => {
+      try {
+        await checkRoom();
+        
+        const path = `chats/${roomId}/messages`;
+        const q = query(collection(db, path), orderBy('createdAt', 'asc'));
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+          const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
+          setMessages(msgs);
+          setLoading(false);
+        }, (error) => {
+          console.error("Chat Messages Error:", error);
+          setLoading(false);
+          handleFirestoreError(error, OperationType.GET, path);
+        });
+
+        return unsub;
+      } catch (err) {
+        console.error("Room Setup Error:", err);
+        setLoading(false);
+        return () => {};
+      }
+    };
+
+    let unsubscribe: () => void = () => {};
+    setupChat().then(unsub => { unsubscribe = unsub; });
 
     return () => unsubscribe();
   }, [roomId, user]);
@@ -170,6 +204,25 @@ export default function Chat() {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Profile Completion Warning */}
+        {!profileComplete && (
+          <div className="mx-6 p-4 bg-indigo-50 border border-indigo-100 rounded-3xl flex items-center gap-4 animate-in slide-in-from-top-4 duration-500">
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-200">
+              <Loader2 className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-0.5">Profile Incomplete</p>
+              <p className="text-xs font-bold text-indigo-900/70">Update your address to receive delivery.</p>
+            </div>
+            <button 
+              onClick={() => navigate('/settings')}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+            >
+              Complete
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
@@ -246,7 +299,7 @@ export default function Chat() {
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
           {!isSeller && (
             <button 
-              onClick={() => handleSend("Is this item still available?")}
+              onClick={() => setInputText("Is this item still available?")}
               className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
             >
               Still available?
@@ -270,7 +323,7 @@ export default function Chat() {
           )}
           {!isSeller && (
             <button 
-              onClick={() => handleSend("What is the battery health?")}
+              onClick={() => setInputText("What is the battery health?")}
               className="whitespace-nowrap px-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-tight text-slate-600 active:bg-indigo-50"
             >
               Battery health?
