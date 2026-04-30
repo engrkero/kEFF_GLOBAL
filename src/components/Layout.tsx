@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Search, MessageSquare, User, PlusCircle, LogIn, LogOut, Package, Settings, Shield } from 'lucide-react';
+import { Home, Search, MessageSquare, User, PlusCircle, LogIn, LogOut, Package, Settings, Shield, ShieldCheck } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -7,13 +7,14 @@ import { useAuth } from '@/lib/AuthContext';
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, login, logout } = useAuth();
+  const isAdmin = user?.email === 'kerenonen4@gmail.com';
 
   const navItems = [
     { icon: Home, label: 'Market', path: '/' },
     { icon: Search, label: 'Browse', path: '/browse' },
     { icon: PlusCircle, label: 'Sell', path: '/sell', highlight: true },
     { icon: MessageSquare, label: 'Chats', path: '/chats' },
-    { icon: user ? Settings : LogIn, label: user ? 'Settings' : 'Login', path: user ? '/settings' : '#', action: !user ? login : undefined },
+    { icon: isAdmin ? ShieldCheck : (user ? Settings : LogIn), label: isAdmin ? 'Admin' : (user ? 'Settings' : 'Login'), path: isAdmin ? '/admin' : (user ? '/settings' : '#'), action: !user ? login : undefined },
   ];
 
   return (
@@ -32,6 +33,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-2">
+              {isAdmin && (
+                <Link to="/admin" className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-slate-900 hover:text-white transition-all transform active:scale-95 animate-pulse">
+                  <ShieldCheck className="w-5 h-5" />
+                </Link>
+              )}
               <Link to="/orders" className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
                  <Package className="w-5 h-5" />
               </Link>

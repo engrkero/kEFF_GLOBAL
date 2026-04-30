@@ -91,7 +91,11 @@ export default function ProductDetails() {
   }, [id, user]);
 
   const toggleFavorite = async () => {
-    if (!user || !product) return;
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!product) return;
     const favRef = doc(db, 'users', user.uid, 'favorites', product.id);
     try {
       if (isFavorited) {
@@ -176,10 +180,34 @@ export default function ProductDetails() {
               referrerPolicy="no-referrer"
             />
           </AnimatePresence>
+
+          {/* Carousel Navigation Arrows */}
+          {product.images.length > 1 && (
+            <>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveImageIndex(prev => (prev > 0 ? prev - 1 : product.images.length - 1));
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 backdrop-blur-md rounded-full text-white/80 active:scale-90 transition-all z-30 hover:bg-white/20"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveImageIndex(prev => (prev < product.images.length - 1 ? prev + 1 : 0));
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 backdrop-blur-md rounded-full text-white/80 active:scale-90 transition-all z-30 hover:bg-white/20"
+              >
+                <ChevronLeft className="w-6 h-6 rotate-180" />
+              </button>
+            </>
+          )}
           
           <button 
             onClick={() => openZoom(activeImageIndex)}
-            className="absolute top-28 right-8 p-3 bg-white/20 backdrop-blur-lg rounded-2xl text-white opacity-0 group-hover:opacity-100 transition-opacity z-30"
+            className="absolute top-28 right-8 p-3 bg-white/20 backdrop-blur-lg rounded-2xl text-white opacity-0 group-hover:opacity-100 transition-opacity z-30 hidden sm:block"
           >
              <Maximize2 className="w-5 h-5" />
           </button>
