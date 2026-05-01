@@ -265,7 +265,7 @@ export default function OrderDetails() {
                 </div>
              </div>
              <Link 
-               to={`/chat/room_${order.listingId}`}
+               to={`/chat/room_${order.listingId}_${order.buyerId}`}
                className="p-3 bg-indigo-50 text-indigo-600 rounded-xl active:scale-95 transition-all"
              >
                 <div className="flex items-center gap-2">
@@ -301,6 +301,13 @@ export default function OrderDetails() {
                    <Info className="w-4 h-4 text-slate-400" />
                    <p className="text-[10px] font-bold text-slate-500">Contact the courier or use their website with your tracking number for real-time updates.</p>
                 </div>
+                <button 
+                  onClick={() => window.open(`https://google.com/search?q=${order.shippingProvider}+tracking+${order.trackingNumber}`, '_blank')}
+                  className="w-full h-12 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Track on Courier Site
+                </button>
              </div>
            ) : isSeller ? (
              <div className="space-y-4 pt-2">
@@ -432,7 +439,7 @@ export default function OrderDetails() {
               </p>
            </div>
            <Link 
-             to={`/chat/room_${order.listingId}`}
+             to={`/chat/room_${order.listingId}_${order.buyerId}`}
              className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-200"
            >
               Open Support Chat

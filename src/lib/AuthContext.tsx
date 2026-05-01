@@ -16,9 +16,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       setLoading(false);
+
+      if (user) {
+        // Presence Tracking
+        const { db } = await import('./firebase');
+        const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+        const statusRef = doc(db, 'users', user.uid, 'status', 'presence');
+        
+        const setOnline = () => setDoc(statusRef, { 
+          status: 'online', 
+          lastChanged: serverTimestamp(),
+          userId: user.uid 
+        }, { merge: true });
+
+        const setOffline = () => setDoc(statusRef, { 
+          status: 'offline', 
+          lastChanged: serverTimestamp() 
+        }, { merge: true });
+
+        setOnline();
+
+        // Heartbeat
+        const interval = setInterval(setOnline, 30000); // 30s heartbeat
+
+        // Visibility Change (Desktop browsers)
+        const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            setOnline();
+          } else {
+            setOffline();
+          }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+          clearInterval(interval);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          setOffline();
+        };
+      }
     });
     return unsubscribe;
   }, []);

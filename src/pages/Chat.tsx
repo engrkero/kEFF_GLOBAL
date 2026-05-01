@@ -39,34 +39,12 @@ export default function Chat() {
   const [isSeller, setIsSeller] = useState(false);
   const [profileComplete, setProfileComplete] = useState(true);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  const [otherUserName, setOtherUserName] = useState<string | null>(null);
+  const [otherUserAvatar, setOtherUserAvatar] = useState<string | null>(null);
   const [otherUserStatus, setOtherUserStatus] = useState<'online' | 'offline'>('offline');
   const [isTyping, setIsTyping] = useState<Record<string, boolean>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-    // Presence Tracking
-    useEffect(() => {
-      if (!user) return;
-      const statusRef = doc(db, 'users', user.uid, 'status', 'presence');
-      
-      // Set online
-      setDoc(statusRef, { 
-        status: 'online', 
-        lastChanged: serverTimestamp(),
-        userId: user.uid // Redundancy for rules if needed
-      }, { merge: true });
-
-      // Keep tracking presence while tab is open
-      const interval = setInterval(() => {
-        setDoc(statusRef, { lastChanged: serverTimestamp() }, { merge: true });
-      }, 60000); // Heartbeat every minute
-
-      // Mark offline on unmount
-      return () => {
-        clearInterval(interval);
-        setDoc(statusRef, { status: 'offline', lastChanged: serverTimestamp() }, { merge: true });
-      };
-    }, [user]);
 
   useEffect(() => {
     if (!roomId || !user) return;
@@ -152,13 +130,15 @@ export default function Chat() {
           setMessages(msgs);
           setLoading(false);
 
-          // Mark messages as read
-          msgs.forEach(msg => {
-            if (msg.senderId !== user.uid && msg.status !== 'READ') {
-              updateDoc(doc(db, `chats/${roomId}/messages`, msg.id!), { status: 'READ' });
-            }
-          });
-        }, (error) => {
+      // Mark messages as read and update room unread status
+      msgs.forEach(msg => {
+        if (msg.senderId !== user.uid && msg.status !== 'READ') {
+          updateDoc(doc(db, `chats/${roomId}/messages`, msg.id!), { status: 'READ' });
+          // Also update room doc so badge clears
+          updateDoc(doc(db, 'chats', roomId), { lastMessageStatus: 'READ' });
+        }
+      });
+    }, (error) => {
           console.error("Chat Messages Error:", error);
           setLoading(false);
           handleFirestoreError(error, OperationType.GET, path);
@@ -191,9 +171,18 @@ export default function Chat() {
     return () => unsubChat();
   }, [roomId, user]);
 
-  // Track Other User Presence
+  // Track Other User Presence & Profile
   useEffect(() => {
     if (!otherUserId) return;
+    
+    // Fetch profile
+    getDoc(doc(db, 'users', otherUserId, 'public', 'profile')).then(snap => {
+      if (snap.exists()) {
+        setOtherUserName(snap.data().displayName);
+        setOtherUserAvatar(snap.data().avatarUrl);
+      }
+    });
+
     const unsub = onSnapshot(doc(db, 'users', otherUserId, 'status', 'presence'), (snap) => {
       if (snap.exists()) {
         setOtherUserStatus(snap.data().status);
@@ -235,6 +224,8 @@ export default function Chat() {
       // Update room last message
       await updateDoc(doc(db, 'chats', roomId), {
         lastMessage: textToSend,
+        lastSenderId: user.uid,
+        lastMessageStatus: otherUserStatus === 'online' ? 'DELIVERED' : 'SENT',
         updatedAt: serverTimestamp()
       });
 
@@ -291,12 +282,16 @@ export default function Chat() {
             <ChevronLeft className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center font-black text-indigo-600 uppercase shadow-inner border border-white/50">
-              {user.displayName?.charAt(0) || 'U'}
+            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center overflow-hidden font-black text-indigo-600 uppercase shadow-inner border border-white/50">
+              {otherUserAvatar ? (
+                <img src={otherUserAvatar} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                otherUserName?.charAt(0) || 'U'
+              )}
             </div>
             <div>
               <p className="font-black text-sm text-slate-800 tracking-tight">
-                {product?.seller?.displayName || (isSeller ? 'Buyer' : 'Seller')}
+                {otherUserName || (isSeller ? 'Buyer' : 'Seller')}
               </p>
               <div className="flex items-center gap-1.5">
                 <div className={cn("w-1.5 h-1.5 rounded-full", otherUserStatus === 'online' ? "bg-green-500 animate-pulse" : "bg-slate-300")} />
@@ -413,14 +408,18 @@ export default function Chat() {
             {/* Typing Indicator */}
             {otherUserId && isTyping[otherUserId] && (
               <div className="flex items-end gap-2 animate-in slide-in-from-left-2 duration-300 mb-2">
-                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                   {isSeller ? 'B' : 'S'}
+                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center overflow-hidden font-black text-[10px] text-slate-400 uppercase">
+                   {otherUserAvatar ? (
+                     <img src={otherUserAvatar} alt="T" className="w-full h-full object-cover" />
+                   ) : (
+                     otherUserName?.charAt(0) || '?'
+                   )}
                 </div>
                 <div className="bg-white px-4 py-3 rounded-[1.25rem] rounded-bl-none border border-slate-100 shadow-sm flex items-center gap-1.5">
                   <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
                   <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
                   <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
-                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">Typing...</span>
+                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">{otherUserName || 'User'} is typing...</span>
                 </div>
               </div>
             )}

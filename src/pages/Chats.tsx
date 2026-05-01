@@ -104,11 +104,16 @@ export default function Chats() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-black text-slate-800 truncate">{room.otherName}</h3>
-                  <p className="text-xs font-semibold text-slate-400 truncate mt-0.5">
+                  <h3 className={cn("font-black text-slate-800 truncate", (room.lastSenderId && room.lastSenderId !== user.uid && room.lastMessageStatus !== 'READ') && "text-indigo-600")}>
+                    {room.otherName}
+                  </h3>
+                  <p className={cn("text-xs truncate mt-0.5", (room.lastSenderId && room.lastSenderId !== user.uid && room.lastMessageStatus !== 'READ') ? "font-black text-slate-900" : "font-semibold text-slate-400")}>
                     {room.lastMessage || 'Send a message to start negotiating...'}
                   </p>
                 </div>
+                {(room.lastSenderId && room.lastSenderId !== user.uid && room.lastMessageStatus !== 'READ') && (
+                  <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full animate-pulse shadow-lg shadow-indigo-200" />
+                )}
                 <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 transition-colors" />
               </div>
             </Link>

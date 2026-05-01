@@ -1,13 +1,42 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Home, Search, MessageSquare, User, PlusCircle, LogIn, LogOut, Package, Settings, Shield, ShieldCheck } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, login, logout } = useAuth();
+  const [unreadCount, setUnreadCount] = React.useState(0);
   const isAdmin = user?.email === 'kerenonen4@gmail.com';
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    // Since we can't do complex aggregation on the client without many listeners,
+    // we listen to rooms where participants include user and has an unread flag
+    // For now, let's just listen to rooms and check if lastMessage was not by me?
+    // Actually, I'll update the Chat.tsx to set unreadCount in the room doc.
+    const roomsQuery = query(collection(db, 'chats'), where('participants', 'array-contains', user.uid));
+    
+    const unsubscribe = onSnapshot(roomsQuery, (snapshot) => {
+      let count = 0;
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.lastSenderId && data.lastSenderId !== user.uid && data.lastMessageStatus !== 'READ') {
+          count++;
+        }
+      });
+      setUnreadCount(count);
+    });
+
+    return unsubscribe;
+  }, [user]);
 
   const navItems = [
     { icon: Home, label: 'Market', path: '/' },
@@ -79,11 +108,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 )}
                 onClick={item.action}
               >
-                <item.icon className={cn(
-                  "w-5 h-5",
-                  item.highlight && "w-8 h-8 -mt-6 bg-indigo-600 text-white rounded-2xl p-1.5 shadow-xl shadow-indigo-100 border-2 border-white transition-transform group-hover:scale-110",
-                  !item.highlight && isActive && "scale-110"
-                )} />
+                <div className="relative">
+                  <item.icon className={cn(
+                    "w-5 h-5",
+                    item.highlight && "w-8 h-8 -mt-6 bg-indigo-600 text-white rounded-2xl p-1.5 shadow-xl shadow-indigo-100 border-2 border-white transition-transform group-hover:scale-110",
+                    !item.highlight && isActive && "scale-110"
+                  )} />
+                  {item.label === 'Chats' && unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full text-[7px] font-black text-white flex items-center justify-center animate-bounce">
+                      {unreadCount}
+                    </span>
+                  )}
+                </div>
                 {!item.highlight && (
                   <span className={cn(
                     "text-[8px] font-bold uppercase tracking-[0.05em]",

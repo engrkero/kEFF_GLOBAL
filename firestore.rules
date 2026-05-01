@@ -74,7 +74,7 @@ service cloud.firestore {
         && data.text is string && data.text.size() >= 0 && data.text.size() <= 2000
         && data.senderId == request.auth.uid
         && data.createdAt == request.time
-        && request.auth.uid in room.participants
+        && room.participants.hasAny([request.auth.uid])
         && (!('type' in data) || data.type in ['TEXT', 'OFFER', 'SYSTEM', 'PAY_REQUEST'])
         && (!('offerAmount' in data) || data.offerAmount is int)
         && (!('status' in data) || data.status in ['SENT', 'DELIVERED', 'READ']);
@@ -176,18 +176,18 @@ service cloud.firestore {
 
     // 5. Chats Collection
     match /chats/{roomId} {
-      allow get: if isValidId(roomId) && isSignedIn() && request.auth.uid in resource.data.participants;
-      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
-      allow create: if isValidId(roomId) && isSignedIn() && incoming().participants.size() == 2 && request.auth.uid in incoming().participants;
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participants && (
+      allow get: if isValidId(roomId) && isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
+      allow list: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
+      allow create: if isValidId(roomId) && isSignedIn() && incoming().participants.size() == 2 && incoming().participants.hasAny([request.auth.uid]);
+      allow update: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]) && (
         incoming().diff(existing()).affectedKeys().hasOnly(['typing', 'updatedAt', 'lastMessage'])
       );
       
       match /messages/{messageId} {
-        allow get: if isValidId(messageId) && isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(roomId)).data.participants;
-        allow list: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(roomId)).data.participants;
+        allow get: if isValidId(messageId) && isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]);
+        allow list: if isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]);
         allow create: if isValidId(messageId) && isSignedIn() && isValidChatMessage(incoming(), roomId);
-        allow update: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(roomId)).data.participants && (
+        allow update: if isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]) && (
           incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status == 'READ'
         );
       }
