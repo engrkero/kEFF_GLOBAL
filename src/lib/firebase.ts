@@ -1,10 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, limit, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer, collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, limit, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Use long polling to avoid WebSocket errors in the AI Studio environment
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId);
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

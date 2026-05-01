@@ -191,12 +191,14 @@ export default function Chat() {
     return () => unsub();
   }, [otherUserId]);
 
+  const [sending, setSending] = useState(false);
+
   const handleTyping = (typing: boolean) => {
     if (!roomId || !user) return;
     updateDoc(doc(db, 'chats', roomId), {
       [`typing.${user.uid}`]: typing,
       updatedAt: serverTimestamp()
-    });
+    }).catch(e => console.error("Typing update failed", e));
   };
 
   useEffect(() => {
@@ -206,8 +208,9 @@ export default function Chat() {
   const handleSend = async (customText?: string, type: 'TEXT' | 'OFFER' | 'SYSTEM' | 'PAY_REQUEST' = 'TEXT', amount?: number) => {
     const textToSend = customText || inputText;
     if (!textToSend.trim() && type === 'TEXT') return;
-    if (!user || !roomId) return;
+    if (!user || !roomId || sending) return;
 
+    setSending(true);
     if (!customText) setInputText('');
 
     const path = `chats/${roomId}/messages`;
@@ -231,7 +234,12 @@ export default function Chat() {
 
       handleTyping(false);
     } catch (error) {
+      console.error("Send Message Error:", error);
+      // Re-set input on error if it was a text message
+      if (!customText) setInputText(textToSend);
       handleFirestoreError(error, OperationType.CREATE, path);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -491,15 +499,15 @@ export default function Chat() {
             />
             <button 
               onClick={() => handleSend()}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || sending}
               className={cn(
-                "absolute right-2 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95",
-                inputText.trim() 
+                "absolute right-2 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 min-w-[70px] flex items-center justify-center",
+                inputText.trim() && !sending
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" 
-                  : "text-slate-300 pointer-events-none"
+                  : "bg-slate-100 text-slate-300 pointer-events-none"
               )}
             >
-              Send
+              {sending ? <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> : 'Send'}
             </button>
           </div>
         </div>

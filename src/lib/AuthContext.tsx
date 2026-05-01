@@ -16,9 +16,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let presenceUnsubscribe: (() => void) | undefined;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       setLoading(false);
+
+      // Cleanup previous presence tracking if user changed
+      if (presenceUnsubscribe) {
+        presenceUnsubscribe();
+        presenceUnsubscribe = undefined;
+      }
 
       if (user) {
         // Presence Tracking
@@ -42,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Heartbeat
         const interval = setInterval(setOnline, 30000); // 30s heartbeat
 
-        // Visibility Change (Desktop browsers)
+        // Visibility Change
         const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
             setOnline();
@@ -52,14 +60,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        return () => {
+        presenceUnsubscribe = () => {
           clearInterval(interval);
           document.removeEventListener('visibilitychange', handleVisibilityChange);
           setOffline();
         };
       }
     });
-    return unsubscribe;
+
+    return () => {
+      unsubscribe();
+      if (presenceUnsubscribe) presenceUnsubscribe();
+    };
   }, []);
 
   const login = async () => {
