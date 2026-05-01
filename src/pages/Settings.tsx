@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera, CheckCircle2, CreditCard } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import { NIGERIA_STATES } from '../constants/nigeria';
@@ -50,6 +50,7 @@ export default function Settings() {
     const fetchData = async () => {
       if (!user) return;
       try {
+        setLoading(true);
         // Check Admin Status
         const adminSnap = await getDoc(doc(db, 'admins', user.uid));
         setIsAdmin(adminSnap.exists() || user.email === 'kerenonen4@gmail.com');
@@ -79,7 +80,7 @@ export default function Settings() {
           setFeePaid(data.verificationFeePaid || false);
         }
       } catch (error) {
-        console.error(error);
+        console.error("Fetch Settings error:", error);
       } finally {
         setLoading(false);
       }
@@ -90,6 +91,10 @@ export default function Settings() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 1024 * 500) { // 500KB limit for demo simplicity
+        alert("File too large. Please use an image smaller than 500KB.");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarUrl(reader.result as string);
@@ -104,35 +109,45 @@ export default function Settings() {
     try {
       const vStatus = overrides?.verificationStatus ?? verificationStatus;
       
+      const publicPath = `users/${user.uid}/public/profile`;
       // Update Public Profile
-      await setDoc(doc(db, 'users', user.uid, 'public', 'profile'), {
-        displayName,
-        avatarUrl,
-        location,
-        verificationStatus: vStatus,
-        verificationDocs,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, publicPath), {
+          displayName,
+          avatarUrl,
+          location,
+          verificationStatus: vStatus,
+          verificationDocs,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, publicPath);
+      }
 
+      const privatePath = `users/${user.uid}/private/data`;
       // Update Private Data
-      await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
-        phoneNumber,
-        address,
-        lga,
-        state,
-        zipCode,
-        bankDetails,
-        notificationPrefs: notifs,
-        twoFactorEnabled: twoFactor,
-        bvn,
-        verificationFeePaid: feePaid,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, privatePath), {
+          phoneNumber,
+          address,
+          lga,
+          state,
+          zipCode,
+          bankDetails,
+          notificationPrefs: notifs,
+          twoFactorEnabled: twoFactor,
+          bvn,
+          verificationFeePaid: feePaid,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, privatePath);
+      }
 
       alert("Profile updated successfully!");
     } catch (error) {
-      console.error(error);
-      alert("Failed to update profile.");
+      console.error("Save Settings error:", error);
+      alert("Failed to update profile. " + (error instanceof Error ? error.message : ""));
     } finally {
       setSaving(false);
     }
@@ -156,8 +171,9 @@ export default function Settings() {
       amount: 550 * 100, // ₦550 in kobo
       currency: 'NGN',
       onSuccess: async (transaction: any) => {
+        const path = `users/${user.uid}/private/data`;
         try {
-          await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
+          await setDoc(doc(db, path), {
             verificationFeePaid: true,
             paystackReference: transaction.reference,
             updatedAt: serverTimestamp()
@@ -165,8 +181,7 @@ export default function Settings() {
           setFeePaid(true);
           alert("Payment successful! Your verification fee has been recorded.");
         } catch (e) {
-          console.error(e);
-          alert("Payment successful but failed to sync. Reference: " + transaction.reference);
+          handleFirestoreError(e, OperationType.WRITE, path);
         } finally {
           setIsPaying(false);
         }

@@ -89,7 +89,7 @@ service cloud.firestore {
         allow list: if isAdmin(); // Admin can see all profiles to verify
         allow create: if isValidId(userId) && isOwner(userId) && isValidUserPublic(incoming());
         allow update: if isValidId(userId) && (
-          (isOwner(userId) && isValidUserPublic(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'location', 'verificationStatus', 'verificationDocs', 'updatedAt'])) ||
+          (isOwner(userId) && isValidUserPublic(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'location', 'verificationStatus', 'verificationDocs', 'updatedAt', 'isDeleted'])) ||
           (!isOwner(userId) && isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewCount'])) ||
           (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['verificationStatus', 'updatedAt']))
         );
@@ -98,13 +98,13 @@ service cloud.firestore {
         allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
         allow create, update: if isValidId(userId) && isOwner(userId) && (
           request.method == 'create' || 
-          incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'address', 'lga', 'city', 'state', 'zipCode', 'notificationPrefs', 'twoFactorEnabled', 'verificationStatus', 'verificationDocs', 'bankDetails', 'bvn', 'verificationFeePaid', 'updatedAt'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'address', 'lga', 'city', 'state', 'zipCode', 'notificationPrefs', 'twoFactorEnabled', 'verificationStatus', 'verificationDocs', 'bankDetails', 'bvn', 'verificationFeePaid', 'updatedAt', 'paystackReference'])
         );
       }
       match /status/presence {
         allow get: if isSignedIn();
         allow read: if isSignedIn();
-        allow write: if isOwner(userId);
+        allow write, update: if isOwner(userId);
       }
       match /favorites/{listingId} {
         allow get: if isOwner(userId);

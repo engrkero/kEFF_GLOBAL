@@ -48,11 +48,38 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [editingMode, setEditingMode] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportDetails, setReportDetails] = useState('');
   const [isReporting, setIsReporting] = useState(false);
+  const [presence, setPresence] = useState<'online' | 'offline'>('offline');
 
   const isOwnProfile = user?.uid === id;
+
+  const handleDeleteListing = async (listingId: string) => {
+    if (!window.confirm("Are you sure you want to delete this listing? This action cannot be undone.")) return;
+    setDeletingId(listingId);
+    try {
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'listings', listingId));
+      setListings(prev => prev.filter(l => l.id !== listingId));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete listing.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    const unsub = onSnapshot(doc(db, 'users', id, 'status', 'presence'), (snap) => {
+      if (snap.exists()) {
+        setPresence(snap.data().status);
+      }
+    });
+    return () => unsub();
+  }, [id]);
 
   const handleReport = async () => {
     if (!id || !user || !reportReason) return;
@@ -188,20 +215,27 @@ export default function Profile() {
         </div>
         <div className="pt-16 pb-8 px-8 space-y-4">
           <div className="flex justify-between items-start">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-none">{profile.displayName}</h2>
-                {profile.verificationStatus === 'VERIFIED' && (
-                  <div className="p-1 bg-green-50 rounded-full" title="Verified Seller">
-                    <Shield className="w-4 h-4 text-green-600 fill-green-600" />
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-none">{profile.displayName}</h2>
+                  {profile.verificationStatus === 'VERIFIED' && (
+                    <div className="p-1 bg-green-50 rounded-full" title="Verified Seller">
+                      <Shield className="w-4 h-4 text-green-600 fill-green-600" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className={cn("w-2 h-2 rounded-full", presence === 'online' ? "bg-green-500 animate-pulse shadow-lg shadow-green-200" : "bg-slate-300")} />
+                  <p className={cn("text-[9px] font-black uppercase tracking-widest", presence === 'online' ? "text-green-600" : "text-slate-400")}>
+                    {presence === 'online' ? 'Active Now' : 'Offline'}
+                  </p>
+                  <span className="mx-2 text-slate-200">•</span>
+                  <div className="flex items-center gap-1 text-slate-400">
+                    <MapPin className="w-3 h-3" />
+                    <span className="text-[10px] font-bold">{profile.location || 'Unknown'}</span>
                   </div>
-                )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <MapPin className="w-3 h-3" />
-                <span className="text-xs font-bold">{profile.location || 'Unknown Location'}</span>
-              </div>
-            </div>
             <div className="flex flex-col items-end gap-1">
                <div className="flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">
                   <Star className="w-4 h-4 text-indigo-600 fill-indigo-600" />
@@ -461,15 +495,22 @@ export default function Profile() {
                       </div>
                     </div>
                     {editingMode && (
-                      <button 
-                        onClick={() => navigate(`/edit/${item.id}`)}
-                        className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/20 backdrop-blur-sm rounded-3xl border-2 border-indigo-500 shadow-xl animate-in zoom-in-75 duration-200"
-                      >
-                         <div className="bg-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform -translate-y-2">
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/40 backdrop-blur-md rounded-3xl border-2 border-indigo-500 shadow-xl animate-in zoom-in-75 duration-200 gap-3">
+                         <button 
+                           onClick={() => navigate(`/edit/${item.id}`)}
+                           className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                         >
                             <SettingsIcon className="w-6 h-6 text-white" />
-                         </div>
-                         <span className="text-[9px] font-black text-indigo-900 uppercase tracking-widest">Edit Details</span>
-                      </button>
+                         </button>
+                         <button 
+                           onClick={() => handleDeleteListing(item.id)}
+                           disabled={deletingId === item.id}
+                           className="w-12 h-12 bg-red-500 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform disabled:opacity-50"
+                         >
+                            {deletingId === item.id ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <X className="w-6 h-6 text-white" />}
+                         </button>
+                         <span className="text-[9px] font-black text-slate-900 uppercase tracking-widest bg-white/80 px-2 py-1 rounded-lg">Manage</span>
+                      </div>
                     )}
                   </motion.div>
                 ))}
