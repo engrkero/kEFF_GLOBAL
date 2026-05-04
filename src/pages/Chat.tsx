@@ -317,26 +317,33 @@ export default function Chat() {
         amount: msg.offerAmount,
         currency: "NGN",
         onClose: () => {
-          alert('Payment cancelled');
+          console.log('Payment window closed');
         },
         callback: async (response: any) => {
           // Handle success
           await handleSend(`PAID: ₦${(msg.offerAmount! / 100).toLocaleString()}. Ref: ${response.reference}`, 'SYSTEM');
           
-          // Optionally update order/listing status here
           if (product?.id) {
             try {
-              // Creating a payment record is usually safer via a cloud function, but here we update listing
-              // await updateDoc(doc(db, 'listings', product.id), { status: 'SOLD', updatedAt: serverTimestamp() });
+              // Creating a payment record or updating listing status
             } catch (e) {
-              console.error("Failed to update listing status after payment", e);
+              console.error("Failed to update status", e);
             }
           }
         }
       });
       
       if (handler) {
-        handler.openIframe();
+        // Try openIframe first, then fallback to open() if available
+        if (typeof handler.openIframe === 'function') {
+          handler.openIframe();
+        } else if (typeof handler.open === 'function') {
+          handler.open();
+        } else {
+          // Some versions of PaystackPop might return an object that isn't the setup handler directly depending on how it's called
+          console.error("Paystack handler missing open methods", handler);
+          alert("Payment could not be opened. Please try again.");
+        }
       } else {
         throw new Error("Paystack failed to initialize");
       }

@@ -104,6 +104,11 @@ service cloud.firestore {
       }
     }
 
+    // Support for collectionGroup('profile') queries
+    match /{path=**}/profile {
+      allow read: if isSignedIn();
+    }
+
     // 2. Listings Collection
     match /listings/{listingId} {
       allow read: if true;
@@ -126,7 +131,7 @@ service cloud.firestore {
     // 3. Orders Collection (Escrow)
     match /orders/{orderId} {
       allow get: if isValidId(orderId) && isSignedIn() && (request.auth.uid == resource.data.buyerId || request.auth.uid == resource.data.sellerId || isAdmin());
-      allow list: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid));
       
       allow create: if isValidId(orderId) && isSignedIn() 
         && isValidOrder(incoming())
