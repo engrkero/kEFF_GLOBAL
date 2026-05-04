@@ -337,7 +337,11 @@ export default function Chat() {
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Profile Completion Warning */}
         {!profileComplete && (
-          <div className="mx-6 p-4 bg-indigo-50 border border-indigo-100 rounded-3xl flex items-center gap-4 animate-in slide-in-from-top-4 duration-500">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-6 p-4 bg-indigo-50 border border-indigo-100 rounded-3xl flex items-center gap-4 shadow-sm"
+          >
             <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-200">
               <Loader2 className="w-5 h-5 text-white" />
             </div>
@@ -351,13 +355,38 @@ export default function Chat() {
             >
               Complete
             </button>
-          </div>
+          </motion.div>
         )}
 
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
           </div>
+        ) : messages.length === 0 ? (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-20 px-8 text-center space-y-6"
+          >
+            <div className="w-32 h-32 bg-indigo-50 rounded-full flex items-center justify-center relative">
+               <motion.div 
+                 animate={{ y: [0, -10, 0] }}
+                 transition={{ repeat: Infinity, duration: 3 }}
+                 className="absolute inset-0 flex items-center justify-center"
+               >
+                 <MessageCircle className="w-16 h-16 text-indigo-200" />
+               </motion.div>
+               <div className="absolute bottom-4 right-4 w-10 h-10 bg-white rounded-2xl shadow-xl flex items-center justify-center">
+                 <Send className="w-5 h-5 text-indigo-600" />
+               </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">No Messages Yet</h3>
+              <p className="text-xs font-medium text-slate-400 leading-relaxed max-w-[200px] mx-auto">
+                Start the conversation by sending a friendly greeting or making an offer!
+              </p>
+            </div>
+          </motion.div>
         ) : (
           <>
             <div className="text-center">
@@ -366,77 +395,88 @@ export default function Chat() {
               </span>
             </div>
 
-            {messages.map((msg, i) => {
-              const isMe = msg.senderId === user.uid;
-              const isOffer = msg.type === 'OFFER';
-              const isPayRequest = msg.type === 'PAY_REQUEST';
+            <div className="space-y-6">
+              {messages.map((msg, i) => {
+                const isMe = msg.senderId === user.uid;
+                const isOffer = msg.type === 'OFFER';
+                const isPayRequest = msg.type === 'PAY_REQUEST';
 
-              return (
-                <div key={msg.id || i} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
-                  <div className={cn(
-                    "max-w-[85%] px-4 py-3 rounded-[1.25rem] shadow-sm text-sm font-medium leading-relaxed",
-                    isOffer || isPayRequest
-                      ? "bg-amber-50 border-2 border-amber-200 text-amber-900 rounded-2xl"
-                      : isMe 
-                        ? "bg-indigo-600 text-white rounded-tr-none shadow-indigo-100 shadow-lg" 
-                        : "bg-white text-slate-800 rounded-tl-none border border-slate-100 shadow-slate-100 shadow-md"
-                  )}>
-                    {(isOffer || isPayRequest) && (
-                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-1">
-                        {isOffer ? 'New Offer' : 'Payment Request'}
-                      </p>
-                    )}
-                    {msg.text}
-                    {isOffer && !isMe && (
-                      <div className="mt-3 flex gap-2">
-                        <button 
-                          onClick={() => {
-                            setPayAmount((msg.offerAmount! / 100).toString());
-                            setShowPayRequestModal(true);
-                          }}
-                          className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase"
-                        >
-                          Accept & Request Pay
-                        </button>
-                        <button className="px-3 py-1.5 bg-white border border-amber-200 text-amber-600 rounded-lg text-[10px] font-black uppercase">Decline</button>
-                      </div>
-                    )}
-                    {isPayRequest && !isMe && (
-                      <div className="mt-3">
-                        <button 
-                          onClick={() => handlePayment(msg)}
-                          className="w-full px-4 py-2.5 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-100 active:scale-95 transition-all"
-                        >
-                          Pay Securely ₦{(msg.offerAmount! / 100).toLocaleString()}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {msg.createdAt && (
-                    <div className={cn("flex items-center gap-1.5 mt-2", isMe ? "justify-end" : "justify-start")}>
-                      <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">
-                        {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-                      </p>
-                      {isMe && (
-                        <div className="flex items-center gap-1">
-                          {msg.status === 'READ' ? (
-                            <CheckCheck className="w-3 h-3 text-indigo-500" />
-                          ) : msg.status === 'DELIVERED' ? (
-                            <CheckCheck className="w-3 h-3 text-slate-300" />
-                          ) : (
-                            <Check className="w-3 h-3 text-slate-300" />
-                          )}
+                return (
+                  <motion.div 
+                    key={msg.id || i} 
+                    initial={{ opacity: 0, x: isMe ? 20 : -20, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    className={cn("flex flex-col", isMe ? "items-end" : "items-start")}
+                  >
+                    <div className={cn(
+                      "max-w-[85%] px-4 py-3 rounded-[1.25rem] shadow-sm text-sm font-medium leading-relaxed transition-all",
+                      isOffer || isPayRequest
+                        ? "bg-amber-50 border-2 border-amber-200 text-amber-900 rounded-2xl"
+                        : isMe 
+                          ? "bg-indigo-600 text-white rounded-tr-none shadow-indigo-100 shadow-lg" 
+                          : "bg-white text-slate-800 rounded-tl-none border border-slate-100 shadow-slate-100 shadow-md"
+                    )}>
+                      {(isOffer || isPayRequest) && (
+                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-1">
+                          {isOffer ? 'New Offer' : 'Payment Request'}
+                        </p>
+                      )}
+                      {msg.text}
+                      {isOffer && !isMe && (
+                        <div className="mt-3 flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setPayAmount((msg.offerAmount! / 100).toString());
+                              setShowPayRequestModal(true);
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase"
+                          >
+                            Accept & Request Pay
+                          </button>
+                          <button className="px-3 py-1.5 bg-white border border-amber-200 text-amber-600 rounded-lg text-[10px] font-black uppercase">Decline</button>
+                        </div>
+                      )}
+                      {isPayRequest && !isMe && (
+                        <div className="mt-3">
+                          <button 
+                            onClick={() => handlePayment(msg)}
+                            className="w-full px-4 py-2.5 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-100 active:scale-95 transition-all"
+                          >
+                            Pay Securely ₦{(msg.offerAmount! / 100).toLocaleString()}
+                          </button>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {msg.createdAt && (
+                      <div className={cn("flex items-center gap-1.5 mt-2", isMe ? "justify-end" : "justify-start")}>
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">
+                          {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                        </p>
+                        {isMe && (
+                          <div className="flex items-center gap-1">
+                            {msg.status === 'READ' ? (
+                              <CheckCheck className="w-3 h-3 text-indigo-500" />
+                            ) : msg.status === 'DELIVERED' ? (
+                              <CheckCheck className="w-3 h-3 text-slate-300" />
+                            ) : (
+                              <Check className="w-3 h-3 text-slate-300" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
             
             {/* Typing Indicator */}
             {otherUserId && isTyping[otherUserId] && (
-              <div className="flex items-end gap-2 animate-in slide-in-from-left-2 duration-300 mb-2">
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-end gap-2 mb-2"
+              >
                 <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center overflow-hidden font-black text-[10px] text-slate-400 uppercase">
                    {otherUserAvatar ? (
                      <img src={otherUserAvatar} alt="T" className="w-full h-full object-cover" />
@@ -450,7 +490,7 @@ export default function Chat() {
                   <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
                   <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">{otherUserName || 'User'} is typing...</span>
                 </div>
-              </div>
+              </motion.div>
             )}
           </>
         )}

@@ -86,11 +86,32 @@ export default function Wishlist() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {items.length === 0 ? (
-          <div className="bg-slate-50 rounded-[3rem] p-16 text-center border border-dashed border-slate-200">
-            <Heart className="w-12 h-12 text-slate-200 mx-auto mb-6" />
-            <p className="font-black text-slate-400 uppercase tracking-widest text-sm">Nothing saved yet</p>
-            <Link to="/browse" className="mt-4 inline-block text-indigo-600 font-black text-[10px] uppercase tracking-widest">Find some gems</Link>
-          </div>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="col-span-full bg-slate-50 rounded-[3.5rem] p-16 text-center border border-dashed border-slate-200 space-y-6 flex flex-col items-center justify-center my-10"
+          >
+            <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-xl relative">
+               <motion.div
+                 animate={{ scale: [1, 1.1, 1] }}
+                 transition={{ repeat: Infinity, duration: 2 }}
+               >
+                 <Heart className="w-16 h-16 text-pink-500 fill-pink-500" />
+               </motion.div>
+               <div className="absolute -top-2 -right-2 p-3 bg-indigo-600 rounded-2xl shadow-lg">
+                  <Smartphone className="w-5 h-5 text-white" />
+               </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Your Heart list is Empty</h3>
+              <p className="text-xs font-medium text-slate-400 leading-relaxed max-w-[240px]">
+                Save items you're interested in while browsing. We'll alert you if the price drops!
+              </p>
+            </div>
+            <Link to="/browse" className="px-8 py-4 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all">
+              Start Shopping
+            </Link>
+          </motion.div>
         ) : (
           <AnimatePresence>
             {items.map((item, index) => (

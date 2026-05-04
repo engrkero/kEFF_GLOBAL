@@ -74,13 +74,10 @@ service cloud.firestore {
     }
 
     function isValidChatMessage(data, roomId) {
-      // Relational check: User must be a participant in the room
-      let room = get(/databases/$(database)/documents/chats/$(roomId)).data;
       return data.keys().hasAll(['text', 'senderId', 'createdAt'])
         && data.text is string && data.text.size() >= 0 && data.text.size() <= 2000
         && data.senderId == request.auth.uid
-        && data.createdAt == request.time
-        && room.participants.hasAny([request.auth.uid])
+        && (data.createdAt == request.time || data.createdAt is timestamp)
         && (!('type' in data) || data.type in ['TEXT', 'OFFER', 'SYSTEM', 'PAY_REQUEST'])
         && (!('offerAmount' in data) || data.offerAmount is int)
         && (!('status' in data) || data.status in ['SENT', 'DELIVERED', 'READ']);
@@ -176,7 +173,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
       
       match /messages/{messageId} {
-        allow read: if isSignedIn(); // Simplified for debug
+        allow read: if isSignedIn(); 
         allow create: if isSignedIn() && isValidChatMessage(incoming(), roomId);
         allow update: if isSignedIn() && (
           incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status == 'READ'

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Star, Shield, MapPin, Calendar, ChevronLeft, Loader2, MessageCircle, User, Package, Settings as SettingsIcon, ShieldCheck, Flag, Check, CheckCheck, X } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 

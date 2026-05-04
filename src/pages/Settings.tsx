@@ -4,9 +4,10 @@ import { User, MapPin, Shield, ChevronLeft, Loader2, Save, LogOut, Camera, Check
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { motion } from 'motion/react';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
 import { NIGERIA_STATES } from '../constants/nigeria';
+import { compressImage } from '../lib/imageUtils';
 
 import PaystackPop from '@paystack/inline-js';
 
@@ -45,69 +46,106 @@ export default function Settings() {
   const [feePaid, setFeePaid] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return;
-      try {
-        setLoading(true);
-        
-        // Use default values from user auth as backup
-        setDisplayName(prev => prev || user.displayName || '');
-        setAvatarUrl(prev => prev || user.photoURL || '');
+    // Check notification permission on mount
+    if ('Notification' in window) {
+      setPushEnabled(Notification.permission === 'granted');
+    }
+  }, []);
 
-        // Check Admin Status - separately so it doesn't block
-        try {
-          const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-          setIsAdmin(adminSnap.exists() || user.email === 'kerenonen4@gmail.com');
-        } catch (e) {
-          console.error("Admin check failed - likely not an admin:", e);
-          setIsAdmin(user.email === 'kerenonen4@gmail.com');
-        }
+  const handleTogglePush = async () => {
+    if (!('Notification' in window)) {
+      alert("Push notifications are not supported on this browser.");
+      return;
+    }
 
-        const publicSnap = await getDoc(doc(db, 'users', user.uid, 'public', 'profile'));
-        if (publicSnap.exists()) {
-          const data = publicSnap.data();
-          setDisplayName(data.displayName || user.displayName || '');
-          setAvatarUrl(data.avatarUrl || user.photoURL || '');
-          setLocation(data.location || '');
-          setVerificationStatus(data.verificationStatus || 'UNVERIFIED');
-          setVerificationDocs(data.verificationDocs || []);
-        }
+    if (Notification.permission === 'granted') {
+      alert("Push notifications are already enabled! You can manage them in your browser settings.");
+      return;
+    }
 
-        const privateSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
-        if (privateSnap.exists()) {
-          const data = privateSnap.data();
-          setPhoneNumber(data.phoneNumber || '');
-          setAddress(data.address || '');
-          setLga(data.lga || '');
-          setState(data.state || '');
-          setZipCode(data.zipCode || '');
-          setBankDetails(data.bankDetails || { accountName: '', accountNumber: '', bankName: '' });
-          setNotifs(data.notificationPrefs || { messages: true, orderUpdates: true, promotions: false });
-          setTwoFactor(data.twoFactorEnabled || false);
-          setBvn(data.bvn || '');
-          setFeePaid(data.verificationFeePaid || false);
-        }
-      } catch (error) {
-        console.error("Fetch Settings error:", error);
-      } finally {
-        setLoading(false);
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setPushEnabled(true);
+      alert("Push notifications enabled! You'll now receive alerts for messages and orders.");
+    } else {
+      alert("Permission denied. Enable notifications in your browser settings to stay updated.");
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+
+    const publicRef = doc(db, 'users', user.uid, 'public', 'profile');
+    const privateRef = doc(db, 'users', user.uid, 'private', 'data');
+    const adminRef = doc(db, 'admins', user.uid);
+
+    // Initial default values from User Auth
+    setDisplayName(user.displayName || '');
+    setAvatarUrl(user.photoURL || '');
+
+    // Check Admin Status
+    getDoc(adminRef).then(snap => {
+      setIsAdmin(snap.exists() || user.email === 'kerenonen4@gmail.com');
+    }).catch(() => {
+      setIsAdmin(user.email === 'kerenonen4@gmail.com');
+    });
+
+    const unsubPublic = onSnapshot(publicRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setDisplayName(data.displayName || user.displayName || '');
+        setAvatarUrl(data.avatarUrl || user.photoURL || '');
+        setLocation(data.location || '');
+        setVerificationStatus(data.verificationStatus || 'UNVERIFIED');
       }
+      setLoading(false);
+    }, (err) => {
+      console.error("Public profile listen error:", err);
+      setLoading(false);
+    });
+
+    const unsubPrivate = onSnapshot(privateRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setPhoneNumber(data.phoneNumber || '');
+        setAddress(data.address || '');
+        setLga(data.lga || '');
+        setState(data.state || '');
+        setZipCode(data.zipCode || '');
+        setBankDetails(data.bankDetails || { accountName: '', accountNumber: '', bankName: '' });
+        setNotifs(data.notificationPrefs || { messages: true, orderUpdates: true, promotions: false });
+        setTwoFactor(data.twoFactorEnabled || false);
+        setBvn(data.bvn || '');
+        setFeePaid(data.verificationFeePaid || false);
+        setVerificationDocs(data.verificationDocs || []);
+      }
+    }, (err) => {
+      console.error("Private data listen error:", err);
+    });
+
+    return () => {
+      unsubPublic();
+      unsubPrivate();
     };
-    fetchData();
   }, [user]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1024 * 500) { // 500KB limit for demo simplicity
-        alert("File too large. Please use an image smaller than 500KB.");
-        return;
-      }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarUrl(reader.result as string);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        try {
+          const compressed = await compressImage(base64, 400, 0.6); // Smaller avatar
+          setAvatarUrl(compressed);
+        } catch (err) {
+          console.error("Compression error:", err);
+          setAvatarUrl(base64);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -127,7 +165,6 @@ export default function Settings() {
           avatarUrl,
           location,
           verificationStatus: vStatus,
-          verificationDocs,
           updatedAt: serverTimestamp()
         }, { merge: true });
       } catch (e) {
@@ -148,6 +185,7 @@ export default function Settings() {
           twoFactorEnabled: twoFactor,
           bvn,
           verificationFeePaid: feePaid,
+          verificationDocs,
           updatedAt: serverTimestamp()
         }, { merge: true });
       } catch (e) {
@@ -211,10 +249,19 @@ export default function Settings() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const newDocs = [...verificationDocs];
-        newDocs[index] = reader.result as string;
-        setVerificationDocs(newDocs);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        try {
+          const compressed = await compressImage(base64, 800, 0.5); // Document quality
+          const newDocs = [...verificationDocs];
+          newDocs[index] = compressed;
+          setVerificationDocs(newDocs);
+        } catch (err) {
+          console.error("Compression error:", err);
+          const newDocs = [...verificationDocs];
+          newDocs[index] = base64;
+          setVerificationDocs(newDocs);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -254,7 +301,11 @@ export default function Settings() {
 
   return (
     <div className="space-y-10 pb-32 relative">
-      <div className="flex justify-between items-center">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-between items-center"
+      >
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
             <ChevronLeft className="w-5 h-5" />
@@ -267,7 +318,7 @@ export default function Settings() {
         >
           <LogOut className="w-5 h-5" />
         </button>
-      </div>
+      </motion.div>
 
       {isAdmin && (
         <section className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
@@ -288,6 +339,38 @@ export default function Settings() {
       )}
 
       <div className="space-y-8">
+        {/* Push Notifications Section */}
+        <section className="bg-indigo-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+           <div className="relative z-10 space-y-6">
+              <div className="flex items-center gap-3">
+                 <Shield className="w-5 h-5 text-indigo-400" />
+                 <h3 className="text-xs font-black uppercase tracking-widest text-indigo-200">System Alerts</h3>
+              </div>
+              
+              <div className="flex items-center justify-between gap-6">
+                 <div className="space-y-1 flex-1">
+                    <p className="text-sm font-black text-white">Push Notifications</p>
+                    <p className="text-[10px] font-bold text-indigo-300 leading-relaxed">
+                       Get alerts for new messages, price drops, and order updates instantly.
+                    </p>
+                 </div>
+                 <button 
+                   onClick={handleTogglePush}
+                   disabled={pushEnabled}
+                   className={cn(
+                     "px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all",
+                     pushEnabled 
+                      ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                      : "bg-white text-indigo-900 shadow-xl shadow-indigo-950/20 active:scale-95"
+                   )}
+                 >
+                    {pushEnabled ? "Enabled" : "Enable Push"}
+                 </button>
+              </div>
+           </div>
+           <div className="absolute right-0 top-0 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl" />
+        </section>
+
         {/* Profile Section */}
         <section className="space-y-6">
           <div className="flex items-center gap-6">
@@ -595,34 +678,45 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 space-y-6 text-center shadow-2xl">
-              <div className="w-20 h-20 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto">
-                 <LogOut className="w-10 h-10 text-red-500" />
-              </div>
-              <div className="space-y-2">
-                 <h2 className="text-2xl font-black text-slate-800 tracking-tight">Are you sure?</h2>
-                 <p className="text-sm text-slate-500 font-medium leading-relaxed">This will permanently delete your account and all active listings. This action cannot be undone.</p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                 <button 
-                   onClick={() => setShowDeleteModal(false)}
-                   className="flex-1 h-16 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest"
-                 >
-                   Cancel
-                 </button>
-                 <button 
-                   onClick={handleDeleteAccount}
-                   className="flex-1 h-16 bg-red-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-red-200"
-                 >
-                   Delete
-                 </button>
-              </div>
-           </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-6"
+          >
+             <motion.div 
+               initial={{ scale: 0.9, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.9, opacity: 0, y: 20 }}
+               className="bg-white w-full max-w-sm rounded-[3rem] p-8 space-y-6 text-center shadow-2xl"
+             >
+                <div className="w-20 h-20 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto">
+                   <LogOut className="w-10 h-10 text-red-500" />
+                </div>
+                <div className="space-y-2">
+                   <h2 className="text-2xl font-black text-slate-800 tracking-tight">Are you sure?</h2>
+                   <p className="text-sm text-slate-500 font-medium leading-relaxed">This will permanently delete your account and all active listings. This action cannot be undone.</p>
+                </div>
+                <div className="flex gap-3 pt-2">
+                   <button 
+                     onClick={() => setShowDeleteModal(false)}
+                     className="flex-1 h-16 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     onClick={handleDeleteAccount}
+                     className="flex-1 h-16 bg-red-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-red-200"
+                   >
+                     Delete
+                   </button>
+                </div>
+             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
