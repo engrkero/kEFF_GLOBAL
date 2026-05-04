@@ -85,7 +85,19 @@ service cloud.firestore {
 
     // --- Collection Rules ---
 
-    // 1. Users Collection
+    // Root-level access for Admin and connectivity
+    match /test/{docId} { allow read: if true; }
+    match /users/{userId} { 
+      allow list: if isAdmin();
+      allow get: if isSignedIn();
+    }
+    match /orders/{orderId} { allow list: if isAdmin(); }
+    match /listings/{listingId} { allow read: if true; }
+    match /reports/{reportId} { allow list: if isAdmin(); }
+    match /verifications/{userId} { allow list: if isAdmin(); }
+    match /chats/{roomId} { allow list: if isAdmin(); }
+
+    // 1. Users Collection Detailed
     match /users/{userId} {
       match /public/profile {
         allow read: if isSignedIn();
@@ -102,11 +114,8 @@ service cloud.firestore {
       match /favorites/{listingId} {
         allow read, write: if isOwner(userId);
       }
-    }
-
-    // Support for collectionGroup('profile') queries
-    match /{path=**}/profile {
-      allow read: if isSignedIn();
+      // Also allow basic get for the root user doc if needed (though we mostly use subdocs)
+      allow get: if isSignedIn();
     }
 
     // 2. Listings Collection

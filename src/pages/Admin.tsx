@@ -80,10 +80,14 @@ export default function Admin() {
   const fetchMarketStats = async () => {
     try {
       // Fetch stats in parallel for better performance
+      const listingsQuery = query(collection(db, 'listings'), where('status', '==', 'Active'));
+      const usersQuery = collection(db, 'users');
+      const ordersQuery = query(collection(db, 'orders'), where('escrowStatus', '==', 'RELEASED'));
+
       const [listingsSnap, usersSnap, ordersSnap] = await Promise.all([
-        getCountFromServer(query(collection(db, 'listings'), where('status', '==', 'Active'))),
-        getCountFromServer(collectionGroup(db, 'profile')),
-        getCountFromServer(query(collection(db, 'orders'), where('escrowStatus', '==', 'RELEASED')))
+        getCountFromServer(listingsQuery).catch(err => { console.error("Listings count failed", err); throw err; }),
+        getCountFromServer(usersQuery).catch(err => { console.error("Users count failed", err); throw err; }),
+        getCountFromServer(ordersQuery).catch(err => { console.error("Orders count failed", err); throw err; })
       ]);
 
       setStats({

@@ -18,7 +18,7 @@ export async function testConnection() {
   try {
     // Try to get a document from server to verify connectivity
     // Using a timeout to prevent hanging
-    const connectionPromise = getDocFromServer(doc(db, 'test', 'connection'));
+    const connectionPromise = getDocFromServer(doc(db, 'listings', 'health-check'));
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 5000));
     
     await Promise.race([connectionPromise, timeoutPromise]);
