@@ -23,6 +23,7 @@ export default function Admin() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sellers, setSellers] = useState<PendingSeller[]>([]);
   const [stats, setStats] = useState({
     activeListings: 0,
@@ -42,36 +43,56 @@ export default function Admin() {
     
     // Set up real-time listener for pending sellers
     const q = query(
-      collectionGroup(db, 'profile'),
+      collectionGroup(db, 'public'),
       where('verificationStatus', '==', 'PENDING')
     );
     
     const unsub = onSnapshot(q, async (snap) => {
+      setError(null);
       setLoading(true);
       try {
+        if (snap.empty) {
+          setSellers([]);
+          setLoading(false);
+          return;
+        }
         const data = await Promise.all(snap.docs.map(async (d) => {
-          const userId = d.ref.parent.parent!.id;
-          const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
-          const privateData = privateSnap.exists() ? privateSnap.data() : {};
-          
-          return {
-            id: d.id,
-            userId,
-            bvn: privateData.bvn,
-            feePaid: privateData.verificationFeePaid,
-            paystackRef: privateData.paystackReference,
-            verificationDocs: privateData.verificationDocs || [], // Fetch docs from private data where they are stored
-            ...d.data()
-          } as PendingSeller;
+          try {
+            const userId = d.ref.parent.parent!.id;
+            const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
+            const privateData = privateSnap.exists() ? privateSnap.data() : {};
+            
+            return {
+              id: d.id,
+              userId,
+              displayName: d.data().displayName || 'User',
+              avatarUrl: d.data().avatarUrl,
+              bvn: privateData.bvn,
+              feePaid: privateData.verificationFeePaid,
+              paystackRef: privateData.paystackReference,
+              verificationDocs: privateData.verificationDocs || [], 
+              ...d.data()
+            } as PendingSeller;
+          } catch (err) {
+            console.error("Error processing seller doc:", d.id, err);
+            return null;
+          }
         }));
-        setSellers(data);
+        setSellers(data.filter((s): s is PendingSeller => s !== null));
       } catch (e) {
         console.error("Live fetch error:", e);
+        setError("Failed to process records. Check your internet connection.");
       } finally {
         setLoading(false);
       }
     }, (err) => {
       console.error("Snapshot error:", err);
+      if (err.message.includes('requires an index')) {
+        setError("This view requires a database index. Please check the logs and follow the link to create it.");
+      } else {
+        setError("Could not load verification queue. Permission denied or system error.");
+      }
+      setLoading(false);
     });
 
     fetchMarketStats();
@@ -184,6 +205,19 @@ export default function Admin() {
           {loading ? (
             <div className="flex justify-center py-20">
                <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="bg-red-50 p-8 rounded-[2.5rem] border border-red-100 text-center space-y-3">
+               <XCircle className="w-10 h-10 text-red-500 mx-auto" />
+               <p className="text-sm font-black text-red-600 uppercase tracking-widest leading-relaxed">
+                  {error}
+               </p>
+               <button 
+                 onClick={() => window.location.reload()}
+                 className="px-6 py-2 bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-widest"
+               >
+                 Retry
+               </button>
             </div>
           ) : sellers.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] border border-dashed border-slate-200 p-16 text-center">
