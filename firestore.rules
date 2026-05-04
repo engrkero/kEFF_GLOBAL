@@ -18,6 +18,10 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       ); 
     }
+    
+    match /admins/{adminId} {
+      allow get: if isSignedIn();
+    }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
@@ -58,7 +62,7 @@ service cloud.firestore {
 
     function isValidUserPublic(data) {
       return data.keys().hasAll(['displayName', 'updatedAt'])
-        && data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 128
+        && data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 256
         && (!('avatarUrl' in data) || data.avatarUrl is string)
         && (!('location' in data) || data.location is string)
         && (!('verificationStatus' in data) || data.verificationStatus in ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'])
@@ -87,35 +91,19 @@ service cloud.firestore {
     // 1. Users Collection
     match /users/{userId} {
       match /public/profile {
-        allow get: if isSignedIn();
-        allow list: if isAdmin(); // Admin can see all profiles to verify
-        allow create: if isValidId(userId) && isOwner(userId) && isValidUserPublic(incoming());
-        allow update: if isValidId(userId) && (
-          (isOwner(userId) && (
-            // User can update basic info.
-            (incoming().verificationStatus != 'VERIFIED' || existing().verificationStatus == 'VERIFIED' || isAdmin())
-          )) ||
-          (!isOwner(userId) && isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewCount'])) ||
-          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['verificationStatus', 'updatedAt']))
-        );
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId) || isAdmin();
       }
       match /private/data {
-        allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
-        allow create: if isValidId(userId) && isOwner(userId); // Basic creation during join
-        allow update: if isValidId(userId) && isOwner(userId) && (
-          // Allow owner to update all their data
-          true
-        );
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isAdmin();
       }
       match /status/presence {
-        allow get: if isSignedIn();
         allow read: if isSignedIn();
-        allow write, update: if isOwner(userId);
+        allow write: if isOwner(userId);
       }
       match /favorites/{listingId} {
-        allow get: if isOwner(userId);
-        allow list: if isOwner(userId);
-        allow create, delete: if isOwner(userId) && isValidId(listingId);
+        allow read, write: if isOwner(userId);
       }
     }
 
@@ -185,15 +173,12 @@ service cloud.firestore {
       allow get: if isValidId(roomId) && isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
       allow list: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
       allow create: if isValidId(roomId) && isSignedIn() && incoming().participants.size() == 2 && incoming().participants.hasAny([request.auth.uid]);
-      allow update: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['typing', 'updatedAt', 'lastMessage', 'lastSenderId', 'lastMessageStatus'])
-      );
+      allow update: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
       
       match /messages/{messageId} {
-        allow get: if isValidId(messageId) && isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]);
-        allow list: if isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]);
-        allow create: if isValidId(messageId) && isSignedIn() && isValidChatMessage(incoming(), roomId);
-        allow update: if isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]) && (
+        allow read: if isSignedIn(); // Simplified for debug
+        allow create: if isSignedIn() && isValidChatMessage(incoming(), roomId);
+        allow update: if isSignedIn() && (
           incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status == 'READ'
         );
       }

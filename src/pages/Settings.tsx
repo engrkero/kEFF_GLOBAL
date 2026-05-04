@@ -51,15 +51,25 @@ export default function Settings() {
       if (!user) return;
       try {
         setLoading(true);
-        // Check Admin Status
-        const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-        setIsAdmin(adminSnap.exists() || user.email === 'kerenonen4@gmail.com');
+        
+        // Use default values from user auth as backup
+        setDisplayName(prev => prev || user.displayName || '');
+        setAvatarUrl(prev => prev || user.photoURL || '');
+
+        // Check Admin Status - separately so it doesn't block
+        try {
+          const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+          setIsAdmin(adminSnap.exists() || user.email === 'kerenonen4@gmail.com');
+        } catch (e) {
+          console.error("Admin check failed - likely not an admin:", e);
+          setIsAdmin(user.email === 'kerenonen4@gmail.com');
+        }
 
         const publicSnap = await getDoc(doc(db, 'users', user.uid, 'public', 'profile'));
         if (publicSnap.exists()) {
           const data = publicSnap.data();
-          setDisplayName(data.displayName || '');
-          setAvatarUrl(data.avatarUrl || '');
+          setDisplayName(data.displayName || user.displayName || '');
+          setAvatarUrl(data.avatarUrl || user.photoURL || '');
           setLocation(data.location || '');
           setVerificationStatus(data.verificationStatus || 'UNVERIFIED');
           setVerificationDocs(data.verificationDocs || []);

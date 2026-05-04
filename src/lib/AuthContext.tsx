@@ -50,19 +50,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Heartbeat
         const interval = setInterval(setOnline, 30000); // 30s heartbeat
 
-        // Visibility Change
+        // Visibility Change - Only set offline if hidden for a while
+        let visibilityTimeout: any;
         const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
+            if (visibilityTimeout) clearTimeout(visibilityTimeout);
             setOnline();
           } else {
-            setOffline();
+            // Set offline after 1 minute of being hidden
+            visibilityTimeout = setTimeout(setOffline, 60000);
           }
         };
+        
+        const handleUnload = () => {
+          setOffline();
+        };
+
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('beforeunload', handleUnload);
 
         presenceUnsubscribe = () => {
           clearInterval(interval);
+          if (visibilityTimeout) clearTimeout(visibilityTimeout);
           document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('beforeunload', handleUnload);
           setOffline();
         };
       }

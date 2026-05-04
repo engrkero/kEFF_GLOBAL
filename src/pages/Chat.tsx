@@ -131,13 +131,23 @@ export default function Chat() {
           setLoading(false);
 
       // Mark messages as read and update room unread status
-      msgs.forEach(msg => {
-        if (msg.senderId !== user.uid && msg.status !== 'READ') {
-          updateDoc(doc(db, `chats/${roomId}/messages`, msg.id!), { status: 'READ' });
-          // Also update room doc so badge clears
-          updateDoc(doc(db, 'chats', roomId), { lastMessageStatus: 'READ' });
-        }
-      });
+      const unreadMsgs = msgs.filter(msg => msg.senderId !== user.uid && msg.status !== 'READ');
+      if (unreadMsgs.length > 0) {
+        const batchUpdate = async () => {
+          try {
+            const { writeBatch } = await import('firebase/firestore');
+            const batch = writeBatch(db);
+            unreadMsgs.forEach(msg => {
+              batch.update(doc(db, `chats/${roomId}/messages`, msg.id!), { status: 'READ' });
+            });
+            batch.update(doc(db, 'chats', roomId), { lastMessageStatus: 'READ' });
+            await batch.commit();
+          } catch (e) {
+            console.error("Failed to mark messages as read", e);
+          }
+        };
+        batchUpdate();
+      }
     }, (error) => {
           console.error("Chat Messages Error:", error);
           setLoading(false);
@@ -233,10 +243,21 @@ export default function Chat() {
       });
 
       handleTyping(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Send Message Error:", error);
       // Re-set input on error if it was a text message
       if (!customText) setInputText(textToSend);
+      
+      let errorMsg = "Failed to send message.";
+      if (error?.message?.includes("permission")) {
+        errorMsg = "Critical: Permission denied. Your account may have restrictions.";
+      } else if (error?.code === 'unavailable' || error?.message?.includes("offline")) {
+        errorMsg = "Network Error: You appear to be offline. Please check your internet.";
+      } else {
+        errorMsg = `Error: ${error?.message || 'Unknown error occurred'}`;
+      }
+      
+      alert(errorMsg);
       handleFirestoreError(error, OperationType.CREATE, path);
     } finally {
       setSending(false);

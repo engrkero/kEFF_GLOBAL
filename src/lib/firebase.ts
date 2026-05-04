@@ -8,6 +8,7 @@ const app = initializeApp(firebaseConfig);
 // Use long polling to avoid WebSocket errors in the AI Studio environment
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: false,
 }, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
