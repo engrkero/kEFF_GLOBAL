@@ -79,25 +79,24 @@ export default function Admin() {
 
   const fetchMarketStats = async () => {
     try {
-      // Fetch Active Listings
-      const listingsQuery = query(collection(db, 'listings'), where('status', '==', 'Active'));
-      const listingsSnap = await getCountFromServer(listingsQuery);
-      
-      // Fetch Total Users
-      const usersQuery = collectionGroup(db, 'profile');
-      const usersSnap = await getCountFromServer(usersQuery);
-
-      // Fetch Completed Transactions
-      const ordersQuery = query(collection(db, 'orders'), where('escrowStatus', '==', 'RELEASED'));
-      const ordersSnap = await getCountFromServer(ordersQuery);
+      // Fetch stats in parallel for better performance
+      const [listingsSnap, usersSnap, ordersSnap] = await Promise.all([
+        getCountFromServer(query(collection(db, 'listings'), where('status', '==', 'Active'))),
+        getCountFromServer(collectionGroup(db, 'profile')),
+        getCountFromServer(query(collection(db, 'orders'), where('escrowStatus', '==', 'RELEASED')))
+      ]);
 
       setStats({
         activeListings: listingsSnap.data().count,
         totalUsers: usersSnap.data().count,
         completedTransactions: ordersSnap.data().count
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error("Stats fetch failed:", e);
+      // Don't crash the whole page if stats fail, but maybe show a subtle indicator
+      if (e.message?.includes('offline')) {
+        console.warn("Stats fetch failed because client is offline. Will retry on next interaction.");
+      }
     }
   };
 

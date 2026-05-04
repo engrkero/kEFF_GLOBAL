@@ -16,10 +16,19 @@ export const googleProvider = new GoogleAuthProvider();
 
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+    // Try to get a document from server to verify connectivity
+    // Using a timeout to prevent hanging
+    const connectionPromise = getDocFromServer(doc(db, 'test', 'connection'));
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 5000));
+    
+    await Promise.race([connectionPromise, timeoutPromise]);
+    console.log("Firestore connection verified.");
+  } catch (error: any) {
+    // Silently log or handle offline state without breaking the app
+    if (error.message?.includes('offline') || error.message?.includes('timeout')) {
+      console.warn("Firestore is currently in offline mode or initial connection is slow.");
+    } else {
+      console.error("Firestore connectivity check failed:", error.message);
     }
   }
 }

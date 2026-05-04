@@ -42,6 +42,8 @@ export default function Chat() {
   const [otherUserName, setOtherUserName] = useState<string | null>(null);
   const [otherUserAvatar, setOtherUserAvatar] = useState<string | null>(null);
   const [otherUserStatus, setOtherUserStatus] = useState<'online' | 'offline'>('offline');
+  const [otherUserListings, setOtherUserListings] = useState<any[]>([]);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isTyping, setIsTyping] = useState<Record<string, boolean>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -201,6 +203,26 @@ export default function Chat() {
     return () => unsub();
   }, [otherUserId]);
 
+  // Fetch Other User's listings
+  useEffect(() => {
+    if (!otherUserId) return;
+    
+    const q = query(
+      collection(db, 'listings'),
+      where('sellerId', '==', otherUserId),
+      where('status', '==', 'ACTIVE'),
+      limit(4)
+    );
+    
+    const unsub = onSnapshot(q, (snap) => {
+      setOtherUserListings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.error("Failed to fetch other user listings", err);
+    });
+    
+    return () => unsub();
+  }, [otherUserId]);
+
   const [sending, setSending] = useState(false);
 
   const handleTyping = (typing: boolean) => {
@@ -280,22 +302,48 @@ export default function Chat() {
 
   const handlePayment = async (msg: Message) => {
     if (!msg.offerAmount) return;
-    // Paystack integration (Simplified Popup)
-    const handler = (window as any).PaystackPop?.setup({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-      email: user?.email,
-      amount: msg.offerAmount,
-      currency: "NGN",
-      callback: async (response: any) => {
-        // Handle success
-        handleSend(`PAID: ₦${(msg.offerAmount! / 100).toLocaleString()}. Ref: ${response.reference}`, 'SYSTEM');
-        // Update order status logic would go here
-      },
-      onClose: () => {
-        alert('Payment cancelled');
+    
+    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!publicKey || publicKey === 'pk_test_...') {
+      alert("Payment System temporarily unavailable (Configuration Missing).");
+      return;
+    }
+
+    try {
+      // Paystack integration
+      const handler = (window as any).PaystackPop?.setup({
+        key: publicKey,
+        email: user?.email,
+        amount: msg.offerAmount,
+        currency: "NGN",
+        onClose: () => {
+          alert('Payment cancelled');
+        },
+        callback: async (response: any) => {
+          // Handle success
+          await handleSend(`PAID: ₦${(msg.offerAmount! / 100).toLocaleString()}. Ref: ${response.reference}`, 'SYSTEM');
+          
+          // Optionally update order/listing status here
+          if (product?.id) {
+            try {
+              // Creating a payment record is usually safer via a cloud function, but here we update listing
+              // await updateDoc(doc(db, 'listings', product.id), { status: 'SOLD', updatedAt: serverTimestamp() });
+            } catch (e) {
+              console.error("Failed to update listing status after payment", e);
+            }
+          }
+        }
+      });
+      
+      if (handler) {
+        handler.openIframe();
+      } else {
+        throw new Error("Paystack failed to initialize");
       }
-    });
-    handler?.openIframe();
+    } catch (e: any) {
+      console.error("Payment error:", e);
+      alert("Failed to initiate payment: " + e.message);
+    }
   };
 
   if (!user) {
@@ -304,14 +352,17 @@ export default function Chat() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] -mx-4 -mt-4 bg-slate-50 relative overflow-hidden animate-in fade-in duration-500">
-      {/* ... Header ... */}
+      {/* Header */}
       <div className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm shadow-slate-100">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-800 active:scale-90 transition-transform">
             <ChevronLeft className="w-6 h-6" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center overflow-hidden font-black text-indigo-600 uppercase shadow-inner border border-white/50">
+          <div 
+            onClick={() => setShowProfileModal(true)}
+            className="flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center overflow-hidden font-black text-indigo-600 uppercase shadow-inner border border-white/50 group-hover:ring-2 group-hover:ring-indigo-200 transition-all">
               {otherUserAvatar ? (
                 <img src={otherUserAvatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
@@ -319,7 +370,7 @@ export default function Chat() {
               )}
             </div>
             <div>
-              <p className="font-black text-sm text-slate-800 tracking-tight">
+              <p className="font-black text-sm text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">
                 {otherUserName || (isSeller ? 'Buyer' : 'Seller')}
               </p>
               <div className="flex items-center gap-1.5">
@@ -331,7 +382,42 @@ export default function Chat() {
             </div>
           </div>
         </div>
+        <button 
+          onClick={() => setShowProfileModal(true)}
+          className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+        >
+          <MoreVertical className="w-5 h-5" />
+        </button>
       </div>
+
+      {/* Product Tag Bar */}
+      {product && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-indigo-600 px-4 py-2 flex items-center justify-between shadow-lg shadow-indigo-100 relative z-40"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-sm overflow-hidden border border-white/10 shrink-0">
+              {product.images?.[0] && (
+                <img src={product.images[0]} alt="Product" className="w-full h-full object-cover" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-white/70 uppercase tracking-widest truncate leading-none mb-0.5">Regarding Item</p>
+              <p className="text-xs font-bold text-white truncate leading-none">
+                {product.title} • ₦{(product.price / 100).toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate(`/product/${product.id}`)}
+            className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-[9px] font-black uppercase tracking-tighter backdrop-blur-md transition-all whitespace-nowrap"
+          >
+            View Item
+          </button>
+        </motion.div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -627,6 +713,88 @@ export default function Chat() {
                     {showOfferModal ? 'Send Offer' : 'Issue Request'}
                   </button>
                </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {showProfileModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowProfileModal(false)}
+          >
+            <motion.div 
+               initial={{ scale: 0.9, opacity: 0 }}
+               animate={{ scale: 1, opacity: 1 }}
+               exit={{ scale: 0.9, opacity: 0 }}
+               className="w-full max-w-md bg-white rounded-[3rem] p-8 space-y-8 shadow-2xl relative overflow-hidden max-h-[80vh] overflow-y-auto"
+               onClick={(e) => e.stopPropagation()}
+            >
+               {/* Decor */}
+               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-[4rem] -z-10" />
+               
+               <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="w-24 h-24 rounded-[2rem] bg-indigo-100 flex items-center justify-center overflow-hidden font-black text-3xl text-indigo-600 uppercase shadow-2xl shadow-indigo-100 border-4 border-white">
+                    {otherUserAvatar ? (
+                      <img src={otherUserAvatar} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      otherUserName?.charAt(0) || 'U'
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">{otherUserName || 'User'}</h2>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      {isSeller ? 'Verified Buyer' : 'Verified Seller'}
+                    </p>
+                  </div>
+               </div>
+
+               {/* Other Listings */}
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">
+                      {isSeller ? "Other Interests" : "Seller's Other Catalog"}
+                    </h4>
+                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{otherUserListings.length} Active</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {otherUserListings.length > 0 ? otherUserListings.map(listing => (
+                      <div 
+                        key={listing.id}
+                        onClick={() => {
+                          setShowProfileModal(false);
+                          navigate(`/product/${listing.id}`);
+                        }}
+                        className="bg-slate-50 border border-slate-100 p-2 rounded-2xl cursor-pointer hover:border-indigo-200 transition-all group"
+                      >
+                         <div className="aspect-square bg-white rounded-xl overflow-hidden mb-2 relative">
+                            {listing.images?.[0] && (
+                              <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                            )}
+                         </div>
+                         <p className="text-[10px] font-bold text-slate-800 truncate px-1">{listing.title}</p>
+                         <p className="text-[10px] font-black text-indigo-600 px-1">₦{(listing.price / 100).toLocaleString()}</p>
+                      </div>
+                    )) : (
+                      <div className="col-span-2 py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No other active items</p>
+                      </div>
+                    )}
+                  </div>
+               </div>
+
+               <button 
+                 onClick={() => setShowProfileModal(false)}
+                 className="w-full py-4 bg-slate-800 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+               >
+                 Close Profile
+               </button>
             </motion.div>
           </motion.div>
         )}
