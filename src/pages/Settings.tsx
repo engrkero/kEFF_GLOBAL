@@ -205,6 +205,21 @@ export default function Settings() {
         handleFirestoreError(e, OperationType.WRITE, privatePath);
       }
 
+      // NEW: Create a shared verification request for Admin
+      if (vStatus === 'PENDING') {
+        await setDoc(doc(db, 'verifications', user.uid), {
+          userId: user.uid,
+          displayName,
+          avatarUrl,
+          bvn,
+          verificationDocs,
+          verificationFeePaid: feePaid,
+          status: 'PENDING',
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      }
+
       alert("Profile updated successfully!");
     } catch (error) {
       console.error("Save Settings error:", error);

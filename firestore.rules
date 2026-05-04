@@ -168,12 +168,17 @@ service cloud.firestore {
     // 5. Chats Collection
     match /chats/{roomId} {
       function isParticipant() {
-        return resource.data.participants.hasAny([request.auth.uid]);
+        return isSignedIn() && (
+          (exists(/databases/$(database)/documents/chats/$(roomId)) && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]))
+        );
       }
 
-      allow get: if isValidId(roomId) && (isAdmin() || (isSignedIn() && isParticipant()));
-      allow list: if isAdmin() || (isSignedIn() && isParticipant());
-      allow create: if isValidId(roomId) && (isAdmin() || (isSignedIn() && incoming().participants.size() == 2 && incoming().participants.hasAny([request.auth.uid])));
+      allow get: if isValidId(roomId) && (isAdmin() || (isSignedIn() && (
+        !exists(/databases/$(database)/documents/chats/$(roomId)) || 
+        get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid])
+      )));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.participants.hasAny([request.auth.uid]));
+      allow create: if isValidId(roomId) && (isAdmin() || (isSignedIn() && incoming().participants.hasAny([request.auth.uid])));
       allow update: if isAdmin() || (isSignedIn() && isParticipant());
       
       match /messages/{messageId} {
@@ -193,6 +198,12 @@ service cloud.firestore {
         incoming().reporterId == request.auth.uid &&
         incoming().createdAt == request.time
       );
+    }
+
+    // 7. Verifications Collection (Admin Queue)
+    match /verifications/{userId} {
+      allow read: if isAdmin() || isOwner(userId);
+      allow create, update: if isAdmin() || (isOwner(userId) && incoming().status == 'PENDING');
     }
   }
 }

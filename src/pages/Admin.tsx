@@ -41,54 +41,32 @@ export default function Admin() {
       return;
     }
     
-    // Set up real-time listener for pending sellers
+    // Set up real-time listener for pending verifications
     const q = query(
-      collectionGroup(db, 'public'),
-      where('verificationStatus', '==', 'PENDING')
+      collection(db, 'verifications'),
+      where('status', '==', 'PENDING')
     );
     
-    const unsub = onSnapshot(q, async (snap) => {
+    const unsub = onSnapshot(q, (snap) => {
       setError(null);
       setLoading(true);
       try {
-        if (snap.empty) {
-          setSellers([]);
-          setLoading(false);
-          return;
-        }
-        const data = await Promise.all(snap.docs.map(async (d) => {
-          try {
-            const userId = d.ref.parent.parent!.id;
-            const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
-            const privateData = privateSnap.exists() ? privateSnap.data() : {};
-            
-            return {
-              id: d.id,
-              userId,
-              displayName: d.data().displayName || 'User',
-              avatarUrl: d.data().avatarUrl,
-              bvn: privateData.bvn,
-              feePaid: privateData.verificationFeePaid,
-              paystackRef: privateData.paystackReference,
-              verificationDocs: privateData.verificationDocs || [], 
-              ...d.data()
-            } as PendingSeller;
-          } catch (err) {
-            console.error("Error processing seller doc:", d.id, err);
-            return null;
-          }
-        }));
-        setSellers(data.filter((s): s is PendingSeller => s !== null));
+        const data = snap.docs.map(d => ({
+          ...d.data(),
+          id: d.id,
+          userId: d.id
+        } as any));
+        setSellers(data);
       } catch (e) {
         console.error("Live fetch error:", e);
-        setError("Failed to process records. Check your internet connection.");
+        setError("Failed to process records.");
       } finally {
         setLoading(false);
       }
     }, (err) => {
       console.error("Snapshot error:", err);
       if (err.message.includes('requires an index')) {
-        setError("This view requires a database index. Please check the logs and follow the link to create it.");
+        setError("This view requires a database index. Please check your Firestore console.");
       } else {
         setError("Could not load verification queue. Permission denied or system error.");
       }
@@ -132,6 +110,13 @@ export default function Admin() {
         verificationStatus: status,
         updatedAt: serverTimestamp()
       });
+
+      // Also update verification record
+      await updateDoc(doc(db, 'verifications', userId), {
+        status: status,
+        updatedAt: serverTimestamp()
+      });
+
       setSellers(prev => prev.filter(s => s.userId !== userId));
       alert(`User ${status.toLowerCase()} successfully!`);
     } catch (e) {

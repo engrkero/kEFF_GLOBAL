@@ -138,6 +138,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "listingId", "createdAt"]
+    },
+    "VerificationRequest": {
+      "title": "Verification Request",
+      "description": "A request for a user to be verified as a seller.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "bvn": { "type": "string" },
+        "verificationDocs": { "type": "array", "items": { "type": "string" } },
+        "verificationFeePaid": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["PENDING", "VERIFIED", "REJECTED"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status"]
     }
   },
   "firestore": {
@@ -148,6 +164,7 @@
     "/orders/{orderId}": { "schema": "Order", "description": "Escrow transaction records." },
     "/chats/{roomId}": { "schema": "ChatRoom", "description": "Chat room metadata." },
     "/chats/{roomId}/messages/{messageId}": { "schema": "ChatMessage", "description": "Messages within a chat room." },
-    "/reviews/{reviewId}": { "schema": "Review", "description": "User reviews and ratings." }
+    "/reviews/{reviewId}": { "schema": "Review", "description": "User reviews and ratings." },
+    "/verifications/{userId}": { "schema": "VerificationRequest", "description": "Queue for admin verification reviews." }
   }
 }
