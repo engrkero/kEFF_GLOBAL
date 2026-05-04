@@ -66,12 +66,25 @@ export default function Settings() {
       return;
     }
 
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      setPushEnabled(true);
-      alert("Push notifications enabled! You'll now receive alerts for messages and orders.");
-    } else {
-      alert("Permission denied. Enable notifications in your browser settings to stay updated.");
+    // Check if we are in an iframe
+    const inIframe = window.self !== window.top;
+    if (inIframe && Notification.permission === 'default') {
+      alert("Browser notification prompts are often blocked inside preview windows. If you don't see a prompt, please open the application in a new tab to enable notifications.");
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setPushEnabled(true);
+        alert("Push notifications enabled! You'll now receive alerts for messages and orders.");
+      } else if (permission === 'denied') {
+        alert("Permission denied. You have previously blocked notifications for this site. Please enable them in your browser's address bar settings (usually a lock icon) to stay updated.");
+      } else {
+        alert("Notification request dismissed. Please try again or open the app in a new tab.");
+      }
+    } catch (err) {
+      console.error("Permission request error:", err);
+      alert("Could not request notification permission. Try opening the app in a new tab.");
     }
   };
 
