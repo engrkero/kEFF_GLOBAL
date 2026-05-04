@@ -117,7 +117,7 @@ export default function Search() {
             <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="text"
-              placeholder="Search smartphones..."
+              placeholder="Search devices & accessories..."
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               className="w-full bg-slate-100 border-none rounded-2xl pl-11 pr-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all"

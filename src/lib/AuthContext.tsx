@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, googleProvider } from './firebase';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +16,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        initializeProfile(result.user);
+      }
+    }).catch((error) => {
+      console.error("Redirect login error:", error);
+    });
+
     let presenceUnsubscribe: (() => void) | undefined;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -85,37 +93,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const initializeProfile = async (user: User) => {
+    // Initialize Firestore profile if it doesn't exist
+    const { db } = await import('./firebase');
+    const { doc, getDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
+    
+    const profileRef = doc(db, 'users', user.uid, 'public', 'profile');
+    const profileSnap = await getDoc(profileRef);
+    
+    if (!profileSnap.exists()) {
+      await setDoc(profileRef, {
+        displayName: user.displayName || 'New User',
+        avatarUrl: user.photoURL || '',
+        location: '',
+        verificationStatus: 'UNVERIFIED',
+        updatedAt: serverTimestamp()
+      });
+
+      await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
+        email: user.email,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }
+  };
+
   const login = async () => {
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
+      const isWebView = /wv|WebView|Android.*(wv|Build\/)/i.test(navigator.userAgent);
       
-      // Initialize Firestore profile if it doesn't exist
-      const { db } = await import('./firebase');
-      const { doc, getDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
-      
-      const profileRef = doc(db, 'users', user.uid, 'public', 'profile');
-      const profileSnap = await getDoc(profileRef);
-      
-      if (!profileSnap.exists()) {
-        await setDoc(profileRef, {
-          displayName: user.displayName || 'New User',
-          avatarUrl: user.photoURL || '',
-          location: '',
-          verificationStatus: 'UNVERIFIED',
-          updatedAt: serverTimestamp()
-        });
-
-        await setDoc(doc(db, 'users', user.uid, 'private', 'data'), {
-          email: user.email,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+      if (isWebView) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        const result = await signInWithPopup(auth, googleProvider);
+        const user = result.user;
+        await initializeProfile(user);
       }
     } catch (error) {
       console.error("Login failed", error);
+      // Fallback to redirect
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (err) {
+        console.error("Redirect fallback failed", err);
+      }
     }
   };
+
+  // Run profile initialization on any auth change too
+  useEffect(() => {
+    if (user) {
+      initializeProfile(user);
+    }
+  }, [user]);
 
   const logout = async () => {
     try {

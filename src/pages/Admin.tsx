@@ -48,8 +48,6 @@ export default function Admin() {
     );
     
     const unsub = onSnapshot(q, (snap) => {
-      setError(null);
-      setLoading(true);
       try {
         const data = snap.docs.map(d => ({
           ...d.data(),
@@ -57,6 +55,7 @@ export default function Admin() {
           userId: d.id
         } as any));
         setSellers(data);
+        setError(null);
       } catch (e) {
         console.error("Live fetch error:", e);
         setError("Failed to process records.");

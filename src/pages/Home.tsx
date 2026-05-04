@@ -55,9 +55,9 @@ export default function Home() {
              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-100">Premium Tech Hub</span>
           </div>
           <div className="space-y-1">
-             <h1 className="text-5xl font-black tracking-tighter leading-[0.85] italic">Premium<br/>Devices.</h1>
+             <h1 className="text-5xl font-black tracking-tighter leading-[0.85] italic">Premium Devices<br/>& Accessories.</h1>
              <p className="text-indigo-100 text-sm font-medium max-w-[220px] leading-relaxed pt-2">
-                The elite peer-to-peer marketplace for authenticated smartphones.
+                The elite peer-to-peer marketplace for authenticated tech and gear.
              </p>
           </div>
           <div className="flex gap-3 pt-2">
