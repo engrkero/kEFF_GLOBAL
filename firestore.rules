@@ -167,15 +167,19 @@ service cloud.firestore {
 
     // 5. Chats Collection
     match /chats/{roomId} {
-      allow get: if isValidId(roomId) && isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
-      allow list: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
-      allow create: if isValidId(roomId) && isSignedIn() && incoming().participants.size() == 2 && incoming().participants.hasAny([request.auth.uid]);
-      allow update: if isSignedIn() && resource.data.participants.hasAny([request.auth.uid]);
+      function isParticipant() {
+        return resource.data.participants.hasAny([request.auth.uid]);
+      }
+
+      allow get: if isValidId(roomId) && (isAdmin() || (isSignedIn() && isParticipant()));
+      allow list: if isAdmin() || (isSignedIn() && isParticipant());
+      allow create: if isValidId(roomId) && (isAdmin() || (isSignedIn() && incoming().participants.size() == 2 && incoming().participants.hasAny([request.auth.uid])));
+      allow update: if isAdmin() || (isSignedIn() && isParticipant());
       
       match /messages/{messageId} {
-        allow read: if isSignedIn(); 
-        allow create: if isSignedIn() && isValidChatMessage(incoming(), roomId);
-        allow update: if isSignedIn() && (
+        allow read: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid])); 
+        allow create: if (isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]))) && isValidChatMessage(incoming(), roomId);
+        allow update: if (isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/chats/$(roomId)).data.participants.hasAny([request.auth.uid]))) && (
           incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status == 'READ'
         );
       }

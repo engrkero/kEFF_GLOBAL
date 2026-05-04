@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, User, CheckCircle2, XCircle, Loader2, ChevronLeft, Search, CreditCard } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
-import { collectionGroup, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, getCountFromServer, collection } from 'firebase/firestore';
+import { collectionGroup, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, getCountFromServer, collection, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -39,8 +39,44 @@ export default function Admin() {
       navigate('/');
       return;
     }
-    fetchPendingSellers();
+    
+    // Set up real-time listener for pending sellers
+    const q = query(
+      collectionGroup(db, 'profile'),
+      where('verificationStatus', '==', 'PENDING')
+    );
+    
+    const unsub = onSnapshot(q, async (snap) => {
+      setLoading(true);
+      try {
+        const data = await Promise.all(snap.docs.map(async (d) => {
+          const userId = d.ref.parent.parent!.id;
+          const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
+          const privateData = privateSnap.exists() ? privateSnap.data() : {};
+          
+          return {
+            id: d.id,
+            userId,
+            bvn: privateData.bvn,
+            feePaid: privateData.verificationFeePaid,
+            paystackRef: privateData.paystackReference,
+            verificationDocs: privateData.verificationDocs || [], // Fetch docs from private data where they are stored
+            ...d.data()
+          } as PendingSeller;
+        }));
+        setSellers(data);
+      } catch (e) {
+        console.error("Live fetch error:", e);
+      } finally {
+        setLoading(false);
+      }
+    }, (err) => {
+      console.error("Snapshot error:", err);
+    });
+
     fetchMarketStats();
+
+    return () => unsub();
   }, [user]);
 
   const fetchMarketStats = async () => {
@@ -64,37 +100,6 @@ export default function Admin() {
       });
     } catch (e) {
       console.error("Stats fetch failed:", e);
-    }
-  };
-
-  const fetchPendingSellers = async () => {
-    setLoading(true);
-    try {
-      const q = query(
-        collectionGroup(db, 'profile'),
-        where('verificationStatus', '==', 'PENDING')
-      );
-      const snap = await getDocs(q);
-      const data = await Promise.all(snap.docs.map(async (d) => {
-        const userId = d.ref.parent.parent!.id;
-        // Fetch private data for BVN and Fee status
-        const privateSnap = await getDoc(doc(db, 'users', userId, 'private', 'data'));
-        const privateData = privateSnap.exists() ? privateSnap.data() : {};
-        
-        return {
-          id: d.id,
-          userId,
-          bvn: privateData.bvn,
-          feePaid: privateData.verificationFeePaid,
-          paystackRef: privateData.paystackReference,
-          ...d.data()
-        } as PendingSeller;
-      }));
-      setSellers(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -225,15 +230,20 @@ export default function Admin() {
                       </div>
                    </div>
 
-                   {seller.verificationDocs ? (
-                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Submitted Proof</p>
-                        <img 
-                          src={seller.verificationDocs} 
-                          alt="Doc" 
-                          className="w-full h-40 object-cover rounded-xl shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(seller.verificationDocs, '_blank')}
-                        />
+                   {seller.verificationDocs && seller.verificationDocs.filter(d => !!d).length > 0 ? (
+                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Submitted Proof ({seller.verificationDocs.filter(d => !!d).length} files)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                           {seller.verificationDocs.filter(d => !!d).map((docUrl, i) => (
+                             <img 
+                               key={i}
+                               src={docUrl} 
+                               alt={`Doc ${i + 1}`} 
+                               className="w-full h-32 object-cover rounded-xl shadow-sm cursor-pointer hover:opacity-90 transition-opacity border border-white"
+                               onClick={() => window.open(docUrl, '_blank')}
+                             />
+                           ))}
+                        </div>
                      </div>
                    ) : (
                      <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center gap-3">
